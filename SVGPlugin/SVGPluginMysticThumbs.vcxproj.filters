@@ -1,0 +1,27 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClInclude Include="SVGPluginMysticThumbs.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="..\Common\MysticThumbsPlugin.h">
+      <Filter>Shared Plugin Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\SharedMysticThumbsPlugin.h">
+      <Filter>Shared Plugin Components</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="SVGPluginMysticThumbs.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="SVGPluginMysticThumbs.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Shared Plugin Components">
+      <UniqueIdentifier>{ef8fbf98-295f-4f90-a810-0e2fb6b102bf}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
