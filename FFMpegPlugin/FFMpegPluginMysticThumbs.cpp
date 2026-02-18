@@ -224,7 +224,7 @@ namespace ffmpegthumb {
 				reg.SetDword(L"", REG_LEAVE_TEMP, leaveTempFiles ? 1u : 0u);
 				reg.SetDword(L"", REG_SWAP_RB, swapRB ? 1u : 0u);
 				reg.SetDword(L"", REG_RETURN_DEBUG_FFMpeg_TN, returnDebugFFMpegThumbnail ? 1u : 0u);
-				reg.SetDword(L"", REG_USE_DESIRED_SIZE_HINT, useDesiredSizeHint ? 1u : 0u);
+				reg.SetDword(L"", REG_USE_DESIRED_SIZE_HINT, useDesiredSizeHint ? 1u : 0u); 
 
 				reg.SetDword(L"", REG_MAX_FFMpeg_DIM, maxFFMpegDim);
 				reg.SetDword(L"", REG_MAX_FFMpeg_BYTES, maxFFMpegBytes);

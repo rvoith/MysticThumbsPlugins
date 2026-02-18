@@ -1949,7 +1949,7 @@ public:
 		  const wchar_t* keys[] =
 		  {
 				L"CompanyName", L"FileDescription", L"FileVersion",
-				L"InternalName", L"LegalCopyright",
+				L"InternalName", L"LegalCopyright", 
 				L"OriginalFilename", L"ProductName", L"ProductVersion",
 				L"Comments", L"LegalTrademarks", L"PrivateBuild", L"SpecialBuild"
 		  };

@@ -373,7 +373,7 @@ namespace svgthumb {
 
 			ping.width = outW;
 			ping.height = outH;
-			ping.bitDepth = 32;
+			ping.bitDepth = 32; 
 
 			LogMessageF(L"Ping called, returning %ux%u @ %u bpp (flags=0x%08X)",
 				ping.width, ping.height, ping.bitDepth, (unsigned int)ping.flags);

@@ -181,10 +181,10 @@
       </Command>
     </PreBuildEvent>
     <PostBuildEvent>
-      <Command>CopyFileWithAdminRights "$(TargetPath)" "$(AppData)\MysticThumbs\Plugins\$(PlatformArchitecture)\" </Command>
+      <Command>CopyFileWithAdminRights "$(TargetPath)" "$(AppData)\MysticThumbs\Plugins\$(PlatformArchitecture)" </Command>
     </PostBuildEvent>
     <PostBuildEvent>
-      <Message>Copy release-plugin ("$(TargetPath)") to MysticThumbs local user plugin-directory "$(AppData)\MysticThumbs\Plugins\$(PlatformArchitecture)\" </Message>
+      <Message>Copy release-plugin ("$(TargetPath)") to MysticThumbs local user plugin-directory "$(AppData)\MysticThumbs\Plugins\$(PlatformArchitecture)" </Message>
     </PostBuildEvent>
   <PreLinkEvent><Command /><Message /></PreLinkEvent></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -209,10 +209,10 @@
       </Command>
     </PreBuildEvent>
     <PostBuildEvent>
-      <Command>CopyFileWithAdminRights "$(TargetPath)" "$(AppData)\MysticThumbs\Plugins\$(PlatformArchitecture)\" </Command>
+      <Command>CopyFileWithAdminRights "$(TargetPath)" "$(AppData)\MysticThumbs\Plugins\$(PlatformArchitecture)" </Command>
     </PostBuildEvent>
     <PostBuildEvent>
-      <Message>Copy release-plugin ("$(TargetPath)") to MysticThumbs local user plugin-directory "$(AppData)\MysticThumbs\Plugins\$(PlatformArchitecture)\" </Message>
+      <Message>Copy release-plugin ("$(TargetPath)") to MysticThumbs local user plugin-directory "$(AppData)\MysticThumbs\Plugins\$(PlatformArchitecture)" </Message>
     </PostBuildEvent>
   <PreLinkEvent><Command /><Message /></PreLinkEvent></ItemDefinitionGroup>
   <ItemGroup>
