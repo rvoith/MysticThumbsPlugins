@@ -22,7 +22,9 @@
 
 #include <wintrust.h>
 #include <softpub.h>
+#include <mscat.h>
 #pragma comment(lib, "wintrust.lib")
+#pragma comment(lib, "crypt32.lib")
 
 #include <d2d1.h>
 #include <dwrite.h>
@@ -44,9 +46,9 @@ static const wchar_t* REG_LABEL_SCALE   = L"LabelScalePct";  // DWORD e.g. 75 me
 
 // Defaults
 static const wchar_t* DEFAULT_TEMPLATE =
-   L"$(DllFileType)\r\n"
-   L"$(DLLFileVersionAsText)\r\n"
-   L"<small>$(VI_ProductName)</small>\r\n";
+   L"<center>$(DllFileType)</center>\r\n"
+   L"<center><strong>$(DLLFileVersionAsText)</strong></center>\r\n"
+   L"<tiny>$(VI_FileDescriptionFirstSentence)</tiny>\r\n";
 
 // -----------------------------------------------------------------------------
 // Direct2D / DirectWrite factories (process-wide)
@@ -103,6 +105,223 @@ static std::wstring GetDllFileTypeFromPath(const std::wstring& path)
 	return ext;
 }
 
+enum class SigKind
+{
+	None = 0,
+	Embedded,
+	Catalog
+};
+
+static bool HasEmbeddedSignatureBlob(const std::wstring& path)
+{
+	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ,
+		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+		nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (h == INVALID_HANDLE_VALUE) return false;
+
+	HANDLE map = CreateFileMappingW(h, nullptr, PAGE_READONLY, 0, 0, nullptr);
+	if (!map) { CloseHandle(h); return false; }
+
+	BYTE* base = (BYTE*)MapViewOfFile(map, FILE_MAP_READ, 0, 0, 0);
+	if (!base) { CloseHandle(map); CloseHandle(h); return false; }
+
+	bool has = false;
+	__try
+	{
+		auto* dos = (IMAGE_DOS_HEADER*)base;
+		if (dos->e_magic == IMAGE_DOS_SIGNATURE)
+		{
+			auto* nt = (IMAGE_NT_HEADERS*)(base + dos->e_lfanew);
+			if (nt->Signature == IMAGE_NT_SIGNATURE)
+			{
+				const auto& dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_SECURITY];
+				// NOTE: security directory uses FILE OFFSET, not RVA. Non-zero => embedded signature exists.
+				if (dir.VirtualAddress != 0 && dir.Size != 0)
+					has = true;
+			}
+		}
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) { has = false; }
+
+	UnmapViewOfFile(base);
+	CloseHandle(map);
+	CloseHandle(h);
+	return has;
+}
+
+static bool HasCatalogSignature(const std::wstring& path)
+{
+	HANDLE hFile = CreateFileW(path.c_str(), GENERIC_READ,
+		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+		nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (hFile == INVALID_HANDLE_VALUE) return false;
+
+	HCATADMIN hCatAdmin = nullptr;
+	if (!CryptCATAdminAcquireContext(&hCatAdmin, nullptr, 0))
+	{
+		CloseHandle(hFile);
+		return false;
+	}
+
+	DWORD hashLen = 0;
+	CryptCATAdminCalcHashFromFileHandle(hFile, &hashLen, nullptr, 0);
+	if (!hashLen)
+	{
+		CryptCATAdminReleaseContext(hCatAdmin, 0);
+		CloseHandle(hFile);
+		return false;
+	}
+
+	std::vector<BYTE> hash(hashLen);
+	if (!CryptCATAdminCalcHashFromFileHandle(hFile, &hashLen, hash.data(), 0))
+	{
+		CryptCATAdminReleaseContext(hCatAdmin, 0);
+		CloseHandle(hFile);
+		return false;
+	}
+
+	HCATINFO hCatInfo = CryptCATAdminEnumCatalogFromHash(hCatAdmin, hash.data(), hashLen, 0, nullptr);
+
+	CryptCATAdminReleaseCatalogContext(hCatAdmin, hCatInfo, 0);
+	CryptCATAdminReleaseContext(hCatAdmin, 0);
+	CloseHandle(hFile);
+
+	return hCatInfo != nullptr;
+}
+
+static SigKind DetectSigKind(const std::wstring& path)
+{
+	// Prefer embedded if both exist (rare, but can happen)
+	if (HasEmbeddedSignatureBlob(path))
+		return SigKind::Embedded;
+
+	if (HasCatalogSignature(path))
+		return SigKind::Catalog;
+
+	return SigKind::None;
+}
+
+static bool IsTrustedEmbeddedSignature(const std::wstring& path)
+{
+	WINTRUST_FILE_INFO fi{};
+	fi.cbStruct = sizeof(fi);
+	fi.pcwszFilePath = path.c_str();
+
+	GUID policy = WINTRUST_ACTION_GENERIC_VERIFY_V2;
+
+	WINTRUST_DATA wtd{};
+	wtd.cbStruct = sizeof(wtd);
+	wtd.dwUIChoice = WTD_UI_NONE;
+	wtd.fdwRevocationChecks = WTD_REVOKE_NONE;
+	wtd.dwUnionChoice = WTD_CHOICE_FILE;
+	wtd.pFile = &fi;
+
+	// Avoid network delays for thumbnails
+	wtd.dwProvFlags = WTD_CACHE_ONLY_URL_RETRIEVAL;
+
+	// Do a proper verify/close cycle (more reliable than IGNORE in edge cases)
+	wtd.dwStateAction = WTD_STATEACTION_VERIFY;
+	LONG st = WinVerifyTrust(nullptr, &policy, &wtd);
+	wtd.dwStateAction = WTD_STATEACTION_CLOSE;
+	WinVerifyTrust(nullptr, &policy, &wtd);
+
+	return st == ERROR_SUCCESS;
+}
+
+static bool IsTrustedCatalogSignature(const std::wstring& path)
+{
+	// Open file
+	HANDLE hFile = CreateFileW(path.c_str(), GENERIC_READ,
+		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+		nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (hFile == INVALID_HANDLE_VALUE) return false;
+
+	// Acquire catalog admin context (generic)
+	HCATADMIN hCatAdmin = nullptr;
+	if (!CryptCATAdminAcquireContext(&hCatAdmin, nullptr, 0))
+	{
+		CloseHandle(hFile);
+		return false;
+	}
+
+	// Compute hash used for catalog lookup
+	DWORD hashLen = 0;
+	CryptCATAdminCalcHashFromFileHandle(hFile, &hashLen, nullptr, 0);
+	if (hashLen == 0)
+	{
+		CryptCATAdminReleaseContext(hCatAdmin, 0);
+		CloseHandle(hFile);
+		return false;
+	}
+
+	std::vector<BYTE> hash(hashLen);
+	if (!CryptCATAdminCalcHashFromFileHandle(hFile, &hashLen, hash.data(), 0))
+	{
+		CryptCATAdminReleaseContext(hCatAdmin, 0);
+		CloseHandle(hFile);
+		return false;
+	}
+
+	// Find a catalog containing this hash
+	HCATINFO hCatInfo = CryptCATAdminEnumCatalogFromHash(hCatAdmin, hash.data(), hashLen, 0, nullptr);
+	if (!hCatInfo)
+	{
+		CryptCATAdminReleaseContext(hCatAdmin, 0);
+		CloseHandle(hFile);
+		return false;
+	}
+
+	// Get catalog file path
+	CATALOG_INFO ci{};
+	ci.cbStruct = sizeof(ci);
+	if (!CryptCATCatalogInfoFromContext(hCatInfo, &ci, 0))
+	{
+		CryptCATAdminReleaseCatalogContext(hCatAdmin, hCatInfo, 0);
+		CryptCATAdminReleaseContext(hCatAdmin, 0);
+		CloseHandle(hFile);
+		return false;
+	}
+
+	// Verify the catalog itself (signed), and that it contains our member hash
+	WINTRUST_CATALOG_INFO cat{};
+	cat.cbStruct = sizeof(cat);
+	cat.pcwszCatalogFilePath = ci.wszCatalogFile;
+	cat.pbCalculatedFileHash = hash.data();
+	cat.cbCalculatedFileHash = hashLen;
+	cat.pcwszMemberTag = nullptr;
+	cat.pcwszMemberFilePath = path.c_str();
+
+	GUID policy = WINTRUST_ACTION_GENERIC_VERIFY_V2;
+
+	WINTRUST_DATA wtd{};
+	wtd.cbStruct = sizeof(wtd);
+	wtd.dwUIChoice = WTD_UI_NONE;
+	wtd.fdwRevocationChecks = WTD_REVOKE_NONE;
+	wtd.dwUnionChoice = WTD_CHOICE_CATALOG;
+	wtd.pCatalog = &cat;
+	wtd.dwProvFlags = WTD_CACHE_ONLY_URL_RETRIEVAL;
+
+	wtd.dwStateAction = WTD_STATEACTION_VERIFY;
+	LONG st = WinVerifyTrust(nullptr, &policy, &wtd);
+	wtd.dwStateAction = WTD_STATEACTION_CLOSE;
+	WinVerifyTrust(nullptr, &policy, &wtd);
+
+	CryptCATAdminReleaseCatalogContext(hCatAdmin, hCatInfo, 0);
+	CryptCATAdminReleaseContext(hCatAdmin, 0);
+	CloseHandle(hFile);
+
+	return st == ERROR_SUCCESS;
+}
+
+static bool IsFileTrustedSigned(const std::wstring& path)
+{
+	if (IsTrustedEmbeddedSignature(path))
+		return true;
+
+	// Important: catalog-only files (like many in System32) land here
+	return IsTrustedCatalogSignature(path);
+}
+
 
 static bool IsFileAuthenticodeSigned(const std::wstring& path)
 {
@@ -110,22 +329,30 @@ static bool IsFileAuthenticodeSigned(const std::wstring& path)
 
 	WINTRUST_FILE_INFO fileInfo{};
 	fileInfo.cbStruct = sizeof(fileInfo);
-	fileInfo.pcwszFilePath = path.c_str();
+	fileInfo.pcwszFilePath = path.c_str(); 
 
 	GUID policyGUID = WINTRUST_ACTION_GENERIC_VERIFY_V2;
 
 	WINTRUST_DATA wtd{};
 	wtd.cbStruct = sizeof(wtd);
 	wtd.dwUIChoice = WTD_UI_NONE;
-	wtd.fdwRevocationChecks = WTD_REVOKE_NONE;        // fast; change if you want online revocation
+	wtd.fdwRevocationChecks = WTD_REVOKE_NONE;  // fast/offline
 	wtd.dwUnionChoice = WTD_CHOICE_FILE;
 	wtd.pFile = &fileInfo;
-	wtd.dwStateAction = WTD_STATEACTION_IGNORE;
-	wtd.dwProvFlags = WTD_SAFER_FLAG;                 // avoid network where possible
 
+	// Avoid network stalls during thumbnailing
+	wtd.dwProvFlags = WTD_CACHE_ONLY_URL_RETRIEVAL;
+
+	// More reliable than IGNORE for catalog scenarios
+	wtd.dwStateAction = WTD_STATEACTION_VERIFY;
 	LONG status = WinVerifyTrust(nullptr, &policyGUID, &wtd);
+
+	wtd.dwStateAction = WTD_STATEACTION_CLOSE;
+	WinVerifyTrust(nullptr, &policyGUID, &wtd);
+
 	return status == ERROR_SUCCESS;
 }
+
 
 
 
@@ -266,6 +493,70 @@ static std::wstring QueryFixedFileVersion(const VersionInfoBlob& vi)
     return ss.str();
 }
 
+static std::wstring FirstSentenceOrTruncate(const std::wstring& s, size_t hardMax = 140)
+{
+	// take until first . ! ? (common sentence ends), else truncate at word boundary
+	auto isEnd = [](wchar_t c) { return c == L'.' || c == L'!' || c == L'?'; };
+
+	for (size_t i = 0; i < s.size(); ++i)
+	{
+		if (isEnd(s[i]))
+		{
+			// include punctuation
+			size_t end = i + 1;
+			// skip trailing quotes/spaces
+			while (end < s.size() && (s[end] == L'"' || s[end] == L'\'' || s[end] == L' ')) end++;
+			return s.substr(0, i + 1);
+		}
+	}
+
+	if (s.size() <= hardMax) return s;
+
+	size_t cut = hardMax;
+	while (cut > 0 && s[cut - 1] != L' ' && s[cut - 1] != L'\t') cut--;
+	if (cut < 20) cut = hardMax; // avoid over-short
+	return s.substr(0, cut) + L"…";
+}
+
+static std::wstring HtmlTrim(std::wstring s)
+{
+	auto isSpace = [](wchar_t c)
+		{
+			return c == L' ' || c == L'\t' || c == L'\r' || c == L'\n';
+		};
+
+	while (!s.empty() && isSpace(s.front())) s.erase(s.begin());
+	while (!s.empty() && isSpace(s.back()))  s.pop_back();
+	return s;
+}
+
+static bool StripTagPair(std::wstring& s,
+	const wchar_t* open,
+	const wchar_t* close)
+{
+	std::wstring o(open), c(close);
+
+	size_t p0 = s.find(o);
+	size_t p1 = s.rfind(c);
+
+	if (p0 != std::wstring::npos &&
+		p1 != std::wstring::npos &&
+		p1 > p0)
+	{
+		std::wstring left = HtmlTrim(s.substr(0, p0));
+		std::wstring right = HtmlTrim(s.substr(p1 + c.size()));
+
+		if (left.empty() && right.empty())
+		{
+			s = s.substr(p0 + o.size(), p1 - (p0 + o.size()));
+			return true;
+		}
+	}
+
+	return false;
+}
+
+
 static D2D1_COLOR_F ColorFromRGB(unsigned rgb, float a = 1.0f)
 {
 	float r = ((rgb >> 16) & 0xFF) / 255.0f;
@@ -300,50 +591,6 @@ static std::wstring ExpandTokens(std::wstring templ, const std::map<std::wstring
         }
     }
     return templ;
-}
-
-static std::wstring StripSmallTagsAndCollectRanges(const std::wstring& in, std::vector<SmallRange>& ranges)
-{
-    ranges.clear();
-    std::wstring out;
-    out.reserve(in.size());
-
-    bool inSmall = false;
-    UINT32 smallStartOut = 0;
-
-    for (size_t i = 0; i < in.size();)
-    {
-        if (in.compare(i, 7, L"<small>") == 0)
-        {
-            inSmall = true;
-            smallStartOut = (UINT32)out.size();
-            i += 7;
-            continue;
-        }
-        if (in.compare(i, 8, L"</small>") == 0)
-        {
-            if (inSmall)
-            {
-                UINT32 smallEndOut = (UINT32)out.size();
-                if (smallEndOut > smallStartOut)
-                    ranges.push_back({ smallStartOut, smallEndOut - smallStartOut });
-            }
-            inSmall = false;
-            i += 8;
-            continue;
-        }
-        out.push_back(in[i]);
-        i++;
-    }
-
-    if (inSmall)
-    {
-        UINT32 smallEndOut = (UINT32)out.size();
-        if (smallEndOut > smallStartOut)
-            ranges.push_back({ smallStartOut, smallEndOut - smallStartOut });
-    }
-
-    return out;
 }
 
 static void NormalizeNewlinesInPlace(std::wstring& s)
@@ -956,6 +1203,65 @@ static void DrawBitnessBadge(
 	rt->DrawTextW(badgeText.c_str(), (UINT32)badgeText.size(), fmt, r, textBrush);
 }
 
+static void DrawCatalogShield(
+	ID2D1RenderTarget* rt,
+	float x, float y, float s)
+{
+	if (!rt || !g_d2d) return;
+
+	// Shield geometry (same as before)
+	CComPtr<ID2D1PathGeometry> geo;
+	if (FAILED(g_d2d->CreatePathGeometry(&geo)) || !geo) return;
+
+	CComPtr<ID2D1GeometrySink> sink;
+	if (FAILED(geo->Open(&sink)) || !sink) return;
+
+	auto P = [&](float px, float py) { return D2D1::Point2F(x + px * s, y + py * s); };
+
+	sink->BeginFigure(P(0.50f, 0.05f), D2D1_FIGURE_BEGIN_FILLED);
+	sink->AddLine(P(0.86f, 0.18f));
+	sink->AddLine(P(0.86f, 0.52f));
+	sink->AddBezier(D2D1::BezierSegment(P(0.86f, 0.78f), P(0.70f, 0.92f), P(0.50f, 0.98f)));
+	sink->AddBezier(D2D1::BezierSegment(P(0.30f, 0.92f), P(0.14f, 0.78f), P(0.14f, 0.52f)));
+	sink->AddLine(P(0.14f, 0.18f));
+	sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+	sink->Close();
+
+	// Yellow gradient
+	const D2D1_COLOR_F topColor = D2D1::ColorF(0.98f, 0.86f, 0.25f, 1.0f); // light yellow
+	const D2D1_COLOR_F bottomColor = D2D1::ColorF(0.86f, 0.66f, 0.10f, 1.0f); // darker yellow
+
+	D2D1_GRADIENT_STOP gs[3]{};
+	gs[0] = { 0.0f,  topColor };
+	gs[1] = { 0.55f, topColor };
+	gs[2] = { 1.0f,  bottomColor };
+
+	CComPtr<ID2D1GradientStopCollection> stops;
+	if (FAILED(rt->CreateGradientStopCollection(gs, 3, &stops)) || !stops) return;
+
+	D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES lgp =
+		D2D1::LinearGradientBrushProperties(D2D1::Point2F(x, y), D2D1::Point2F(x, y + s));
+
+	CComPtr<ID2D1LinearGradientBrush> fill;
+	if (FAILED(rt->CreateLinearGradientBrush(lgp, stops, &fill)) || !fill) return;
+
+	CComPtr<ID2D1SolidColorBrush> stroke;
+	rt->CreateSolidColorBrush(D2D1::ColorF(1.f, 1.f, 1.f, 0.28f), &stroke);
+
+	rt->FillGeometry(geo, fill);
+	if (stroke) rt->DrawGeometry(geo, stroke, 1.0f);
+
+	// Small "folder tab" cue (simple rounded rect) in top-left area of the shield
+	CComPtr<ID2D1SolidColorBrush> tab;
+	rt->CreateSolidColorBrush(D2D1::ColorF(1.f, 1.f, 1.f, 0.22f), &tab);
+	if (tab)
+	{
+		D2D1_RECT_F r = D2D1::RectF(x + s * 0.18f, y + s * 0.16f, x + s * 0.55f, y + s * 0.30f);
+		rt->FillRoundedRectangle(D2D1::RoundedRect(r, s * 0.06f, s * 0.06f), tab);
+	}
+}
+
+
 static void DrawDigitalSignedShield(
 	ID2D1RenderTarget* rt,
 	float x, float y, float s) // top-left + size
@@ -1113,7 +1419,7 @@ public:
 
     bool Ping(_Inout_ MysticThumbsPluginPing& ping) override
     {
-        config.context = m_context;
+        config.context = m_context; 
         config.Load(true);
 
         BindLogConfig(&config.log);
@@ -1125,7 +1431,7 @@ public:
         ping.height = h;
         ping.bitDepth = 32;
         return true;
-    }
+    } 
 
     bool GetCapabilities(_Out_ MysticThumbsPluginCapabilities& capabilities) override
     {
@@ -1194,7 +1500,7 @@ public:
                 {
                     PluginConfig newCfg = st->cfgAtOpen;
                     ApplyDialogToConfig(hDlg, st->cfgAtOpen, newCfg);
-                    if (ConfigDifferent(st->cfgAtOpen, newCfg))
+                    if (ConfigDifferent(st->cfgAtOpen, newCfg)) 
                     {
                         st->plugin->config = newCfg;
                         st->plugin->config.Save();
@@ -1247,15 +1553,54 @@ public:
 		 unsigned int width,
 		 unsigned int height,
 		 const std::wstring& fullText,
-		 const std::vector<SmallRange>& smallRanges,
 		 const std::wstring& bitness,
 		 BuildFlavor flavor,
-		 const bool isSigned)
+		 const SigKind sigKind)
 	 {
 		 if (!bmp || !g_d2d || !g_dw) return E_INVALIDARG;
 
 		 const float W = (float)width;
 		 const float H = (float)height;
+
+		 struct LineRun
+		 {
+			 std::wstring text;
+			 bool center = false;
+			 bool strong = false;
+			 enum class SizeTag { Normal, Small, Tiny } size = SizeTag::Normal;
+		 };
+
+		 auto ParseLines = [&](const std::wstring& markup) -> std::vector<LineRun>
+			 {
+				 std::vector<LineRun> out;
+				 size_t start = 0;
+				 while (start <= markup.size())
+				 {
+					 size_t end = markup.find(L"\r\n", start);
+					 std::wstring line = (end == std::wstring::npos) ? markup.substr(start) : markup.substr(start, end - start);
+					 start = (end == std::wstring::npos) ? markup.size() + 1 : end + 2;
+
+					 line = HtmlTrim(line);
+					 if (line.empty()) continue;
+
+					 LineRun lr;
+					 lr.text = line;
+
+					 bool changed = true;
+					 while (changed)
+					 {
+						 changed = false;
+						 if (StripTagPair(lr.text, L"<center>", L"</center>")) { lr.center = true; changed = true; }
+						 if (StripTagPair(lr.text, L"<strong>", L"</strong>")) { lr.strong = true; changed = true; }
+						 if (StripTagPair(lr.text, L"<small>", L"</small>")) { lr.size = LineRun::SizeTag::Small; changed = true; }
+						 if (StripTagPair(lr.text, L"<tiny>", L"</tiny>")) { lr.size = LineRun::SizeTag::Tiny;  changed = true; }
+						 lr.text = HtmlTrim(lr.text);
+					 }
+
+					 out.push_back(lr);
+				 }
+				 return out;
+			 };
 
 		 // Flavor label + color
 		 auto FlavorLabel = [](BuildFlavor f) -> const wchar_t*
@@ -1281,19 +1626,28 @@ public:
 			 {
 				 switch (f)
 				 {
-				 case BuildFlavor::Debug:   return ColorFromRGB(0xFF3B30, 1.0f); // red
-				 case BuildFlavor::Test:    return ColorFromRGB(0xFFD60A, 1.0f); // yellow
-				 case BuildFlavor::Release: return ColorFromRGB(0x34C759, 1.0f); // green
-				 default:                   return ColorFromRGB(0x9E9E9E, 1.0f); // gray
+				 case BuildFlavor::Debug:   return ColorFromRGB(0xFF3B30, 1.0f);
+				 case BuildFlavor::Test:    return ColorFromRGB(0xFFD60A, 1.0f);
+				 case BuildFlavor::Release: return ColorFromRGB(0x34C759, 1.0f);
+				 default:                   return ColorFromRGB(0x9E9E9E, 1.0f);
 				 }
 			 };
 
 		 const wchar_t* flavorText = FlavorLabel(flavor);
 		 const D2D1_COLOR_F flavorColor = FlavorColor(flavor);
-
 		 bool showStrip = (flavor == BuildFlavor::Debug || flavor == BuildFlavor::Test || flavor == BuildFlavor::Release);
 		 if (flavor == BuildFlavor::Unknown) showStrip = false;
 
+		 // Parse lines
+		 std::vector<LineRun> lines = ParseLines(fullText);
+		 if (lines.empty())
+		 {
+			 LineRun lr;
+			 lr.text = L"(no text)";
+			 lines.push_back(lr);
+		 }
+
+		 // Render target
 		 CComPtr<ID2D1RenderTarget> rt;
 		 D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
 			 D2D1_RENDER_TARGET_TYPE_DEFAULT,
@@ -1304,7 +1658,7 @@ public:
 		 rt->SetTextAntialiasMode(cfg.plateOpaque ? D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE
 			 : D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
 
-		 // Colors
+		 // Brushes
 		 const float plateAlpha = cfg.plateOpaque ? 1.0f : Clamp((float)cfg.plateOpacity / 100.f, 0.f, 1.f);
 		 D2D1_COLOR_F plateColor = D2D1::ColorF(0.16f, 0.16f, 0.16f, plateAlpha);
 		 D2D1_COLOR_F accent = GetBitnessAccentColor(bitness, 1.0f);
@@ -1317,15 +1671,14 @@ public:
 		 rt->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White, 1.f), &textBrush);
 		 rt->CreateSolidColorBrush(accent, &accentBrush);
 
-		 // Geometry (slightly less padding to reduce cramped feeling)
+		 // Geometry constants
 		 const float outerMargin = 6.f;
-		 const float padX = 9.f;   // was 10
-		 const float padY = 6.f;   // was 8 (this helps a lot)
+		 const float padX = 9.f;
+		 const float padY = 5.f;
 
 		 float plateW = Clamp(W * 0.84f, 60.f, W - outerMargin * 2.f);
-		 float maxPlateH = H - outerMargin * 2.f; // IMPORTANT: do NOT subtract pinClearance
+		 float maxPlateH = H - outerMargin * 2.f;
 
-		 // Strip reserve: slightly smaller (especially for Release)
 		 float stripReserve = 0.0f;
 		 if (showStrip && flavorText && *flavorText)
 		 {
@@ -1333,85 +1686,133 @@ public:
 			 stripReserve = Clamp(H * pct, 12.f, 26.f);
 		 }
 
-		 // Pretty bits (pins + rounded)
 		 float cornerRadius = Clamp(H * 0.06f, 4.f, 14.f);
-
-		 float pinThickness = Clamp(cornerRadius * 0.60f, 6.f, 13.f); // slightly thicker
+		 float pinThickness = Clamp(cornerRadius * 0.60f, 6.f, 13.f);
 		 float pinLength = Clamp(H * 0.060f, 6.f, 16.f);
-		 int   pinsPerSide = 7; // a little more "chip-like" than 6
+		 int   pinsPerSide = 7;
 
-		 // Auto-fit font
+		 // Layout limits
+		 const float textW = Clamp(plateW - padX * 2.f, 20.f, W);
+		 const float textHMax = Clamp(maxPlateH - padY * 2.f - stripReserve, 20.f, H);
+
 		 float baseFontStart = Clamp(H * 0.145f, 9.f, 40.f);
 		 float baseFontMin = 9.f;
+
+		 const float lineSpacingMul = 1.06f;
+		 const float smallScale = Clamp((float)cfg.labelScalePct, 50.f, 100.f) / 100.f;
+		 const float tinyScale = 0.55f;
 
 		 DWRITE_TRIMMING trim{};
 		 trim.granularity = DWRITE_TRIMMING_GRANULARITY_CHARACTER;
 
-		 CComPtr<IDWriteTextLayout> bestLayout;
-		 CComPtr<IDWriteTextFormat> bestFormat;
+		 struct BuiltLine
+		 {
+			 CComPtr<IDWriteTextFormat> fmt;
+			 CComPtr<IDWriteTextLayout> layout;
+			 DWRITE_TEXT_METRICS tm{};
+			 float drawH = 0.f;
+			 float fontSize = 0.f; // IMPORTANT: store font size for consistent re-layout
+		 };
 
-		 const float textW = Clamp(plateW - padX * 2.f, 20.f, W);
-		 const float textH = Clamp(maxPlateH - padY * 2.f - stripReserve, 20.f, H);
+		 std::vector<BuiltLine> bestBuilt;
+		 CComPtr<IDWriteTextFormat> bestFormatForBadge;
 
 		 for (float baseFont = baseFontStart; baseFont >= baseFontMin; baseFont -= 1.0f)
 		 {
-			 float smallFont = baseFont * (Clamp((float)cfg.labelScalePct, 50.f, 100.f) / 100.f);
+			 std::vector<BuiltLine> built;
+			 built.reserve(lines.size());
 
-			 CComPtr<IDWriteTextFormat> fmt;
-			 hr = g_dw->CreateTextFormat(
-				 L"Segoe UI", nullptr,
-				 DWRITE_FONT_WEIGHT_SEMI_BOLD,
-				 DWRITE_FONT_STYLE_NORMAL,
-				 DWRITE_FONT_STRETCH_NORMAL,
-				 baseFont,
-				 L"en-us",
-				 &fmt);
-			 if (FAILED(hr)) return hr;
+			 float totalH = 0.f;
 
-			 fmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-			 fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
-			 fmt->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
-
-			 CComPtr<IDWriteTextLayout> layout;
-			 hr = g_dw->CreateTextLayout(fullText.c_str(), (UINT32)fullText.size(), fmt, textW, textH, &layout);
-			 if (FAILED(hr)) return hr;
-
-			 CComPtr<IDWriteInlineObject> ellipsis;
-			 if (SUCCEEDED(g_dw->CreateEllipsisTrimmingSign(fmt, &ellipsis)))
-				 layout->SetTrimming(&trim, ellipsis);
-
-			 for (const auto& r : smallRanges)
+			 for (size_t i = 0; i < lines.size(); ++i)
 			 {
-				 DWRITE_TEXT_RANGE tr{ r.start, r.length };
-				 layout->SetFontSize(smallFont, tr);
-				 layout->SetFontWeight(DWRITE_FONT_WEIGHT_NORMAL, tr);
+				 const LineRun& lr = lines[i];
+
+				 float scale = 1.0f;
+				 if (lr.size == LineRun::SizeTag::Small) scale = smallScale;
+				 else if (lr.size == LineRun::SizeTag::Tiny) scale = tinyScale;
+
+				 float fontSize = Clamp(baseFont * scale, 8.f, 80.f);
+
+				 DWRITE_FONT_WEIGHT weight = lr.strong ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL;
+
+				 CComPtr<IDWriteTextFormat> fmt;
+				 hr = g_dw->CreateTextFormat(
+					 L"Segoe UI", nullptr,
+					 weight,
+					 DWRITE_FONT_STYLE_NORMAL,
+					 DWRITE_FONT_STRETCH_NORMAL,
+					 fontSize,
+					 L"en-us",
+					 &fmt);
+				 if (FAILED(hr)) return hr;
+
+				 fmt->SetTextAlignment(lr.center ? DWRITE_TEXT_ALIGNMENT_CENTER : DWRITE_TEXT_ALIGNMENT_LEADING);
+				 fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+				 fmt->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+
+				 CComPtr<IDWriteTextLayout> layout;
+				 hr = g_dw->CreateTextLayout(lr.text.c_str(), (UINT32)lr.text.size(), fmt, textW, 10000.f, &layout);
+				 if (FAILED(hr)) return hr;
+
+				 layout->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, fontSize * lineSpacingMul, fontSize * 0.80f);
+
+				 if (i == lines.size() - 1)
+				 {
+					 CComPtr<IDWriteInlineObject> ellipsis;
+					 if (SUCCEEDED(g_dw->CreateEllipsisTrimmingSign(fmt, &ellipsis)))
+						 layout->SetTrimming(&trim, ellipsis);
+				 }
+				 else
+				 {
+					 DWRITE_TRIMMING noTrim{};
+					 noTrim.granularity = DWRITE_TRIMMING_GRANULARITY_NONE;
+					 layout->SetTrimming(&noTrim, nullptr);
+				 }
+
+				 DWRITE_TEXT_METRICS tm{};
+				 layout->GetMetrics(&tm);
+
+				 float hLine = tm.height;
+				 totalH += hLine;
+
+				 built.push_back({ fmt, layout, tm, hLine, fontSize });
+
+				 if (!bestFormatForBadge)
+					 bestFormatForBadge = fmt;
 			 }
 
-			 DWRITE_TEXT_METRICS tm{};
-			 layout->GetMetrics(&tm);
+			 float gap = Clamp(baseFont * 0.10f, 0.f, 3.f);
+			 totalH += gap * (float)std::max<int>(0, (int)lines.size() - 1);
 
-			 float neededPlateH = tm.height + padY * 2.f + stripReserve;
+			 bestBuilt = std::move(built);
 
-			 bestLayout = layout;
-			 bestFormat = fmt;
-
-			 if (neededPlateH <= maxPlateH)
+			 if (totalH <= textHMax)
 				 break;
 		 }
 
-		 if (!bestLayout) return E_FAIL;
+		 if (bestBuilt.empty()) return E_FAIL;
 
-		 DWRITE_TEXT_METRICS tmFinal{};
-		 bestLayout->GetMetrics(&tmFinal);
+		 // total stacked height
+		 float totalTextH = 0.f;
+		 float gap = Clamp(bestBuilt[0].fontSize * 0.18f, 0.f, 3.f); // use font size, not tm.height
+		 for (size_t i = 0; i < bestBuilt.size(); ++i)
+		 {
+			 totalTextH += bestBuilt[i].drawH;
+			 if (i + 1 < bestBuilt.size()) totalTextH += gap;
+		 }
 
-		 float plateH = Clamp(tmFinal.height + padY * 2.f + stripReserve, 30.f, maxPlateH);
-
-		 // Normal centering (no pin-safe compacting)
+		 float plateH = Clamp(totalTextH + padY * 2.f + stripReserve, 30.f, maxPlateH);
 		 float left = Clamp((W - plateW) * 0.5f, outerMargin, W - plateW - outerMargin);
+
+		 // Keep the plate visually "chip-like" even if text is short
+		 const float minPlateH = Clamp(H * 0.85f, 90.f, H - outerMargin * 2.f); // The 0.85 can be tweaked to adjust height of plate and pins
+		 if (plateH < minPlateH)
+			 plateH = minPlateH;
+
 		 float top = Clamp((H - plateH) * 0.5f, outerMargin, H - plateH - outerMargin);
 
 		 D2D1_RECT_F plateRect = D2D1::RectF(left, top, left + plateW, top + plateH);
-		 D2D1_POINT_2F origin = D2D1::Point2F(plateRect.left + padX, plateRect.top + padY);
 
 		 // Badge data
 		 std::wstring badgeText = L"?";
@@ -1421,59 +1822,87 @@ public:
 		 else if (bitness == L"ARM64") { badgeText = L"A64"; diamond = false; }
 
 		 float badgeSize = Clamp(H * 0.22f, 22.f, 44.f);
-		 //float badgeMargin = Clamp(H * 0.035f, 4.f, 10.f);
 		 float badgeMargin = Clamp(H * 0.010f, 4.f, 10.f);
 
 		 rt->BeginDraw();
 		 rt->Clear(D2D1::ColorF(0, 0, 0, 0));
 
-		 // Badge anchored to plate (top-right corner of chip)
 		 D2D1_RECT_F badgeRect = D2D1::RectF(
 			 plateRect.right - badgeMargin - badgeSize,
 			 plateRect.top + badgeMargin,
 			 plateRect.right - badgeMargin,
 			 plateRect.top + badgeMargin + badgeSize);
 
-		 // Pins: start a bit in from rounded corners (smaller inset => pins reach further)
-		 float cornerInset = cornerRadius * 0.55f; // was 0.9f (too conservative)
+		 float cornerInset = cornerRadius * 0.55f;
 		 DrawChipPins(rt, plateRect, pinThickness, pinLength, pinsPerSide, accentBrush, badgeRect, cornerInset);
 
-		 // Plate
 		 rt->FillRoundedRectangle(D2D1::RoundedRect(plateRect, cornerRadius, cornerRadius), plateBrush);
 
-		 // Text
-		 rt->DrawTextLayout(origin, bestLayout, textBrush);
+		 // Draw stacked lines
+		 float x0 = plateRect.left + padX;
+		 float y = plateRect.top + padY;
 
-		 // Strip (rounded via A2)
-		 if (stripReserve > 0.0f && showStrip && flavorText && *flavorText)
+		 for (size_t i = 0; i < bestBuilt.size(); ++i)
 		 {
-			 DrawBuildStrip(rt, g_dw, plateRect, stripReserve, std::wstring(flavorText), flavorColor, cornerRadius);
+			 float remaining = (plateRect.bottom - stripReserve) - y - padY;
+			 if (remaining < 10.f) remaining = 10.f;
+
+			 if (i == bestBuilt.size() - 1)
+			 {
+				 // Rebuild last line with correct line spacing + height cap
+				 const LineRun& lr = lines[i];
+
+				 CComPtr<IDWriteTextLayout> capped;
+				 hr = g_dw->CreateTextLayout(
+					 lr.text.c_str(), (UINT32)lr.text.size(),
+					 bestBuilt[i].fmt, textW, remaining, &capped);
+
+				 if (SUCCEEDED(hr) && capped)
+				 {
+					 capped->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM,
+						 bestBuilt[i].fontSize * lineSpacingMul,
+						 bestBuilt[i].fontSize * 0.80f);
+
+					 CComPtr<IDWriteInlineObject> ellipsis;
+					 if (SUCCEEDED(g_dw->CreateEllipsisTrimmingSign(bestBuilt[i].fmt, &ellipsis)))
+						 capped->SetTrimming(&trim, ellipsis);
+
+					 rt->DrawTextLayout(D2D1::Point2F(x0, y), capped, textBrush);
+				 }
+				 else
+				 {
+					 rt->DrawTextLayout(D2D1::Point2F(x0, y), bestBuilt[i].layout, textBrush);
+				 }
+			 }
+			 else
+			 {
+				 rt->DrawTextLayout(D2D1::Point2F(x0, y), bestBuilt[i].layout, textBrush);
+			 }
+
+			 y += bestBuilt[i].drawH;
+			 if (i + 1 < bestBuilt.size()) y += gap;
 		 }
 
-		 // Badge (your DrawBitnessBadge still positions by W/H; if it uses W/H internally,
-		 // it will not match badgeRect. If you updated DrawBitnessBadge to accept a rect, call that instead.)
-		 // For now, keep your existing call:
+		 // Strip
+		 if (stripReserve > 0.0f && showStrip && flavorText && *flavorText)
+			 DrawBuildStrip(rt, g_dw, plateRect, stripReserve, std::wstring(flavorText), flavorColor, cornerRadius);
+
+		 // Bitness badge
 		 D2D1_COLOR_F accentColor = GetBitnessAccentColor(bitness, 1.0f);
-		 DrawBitnessBadge(rt, g_dw, bestFormat, W, H, badgeText, diamond, badgeSize, badgeMargin, accentColor);
+		 DrawBitnessBadge(rt, g_dw,
+			 bestFormatForBadge ? bestFormatForBadge : bestBuilt[0].fmt,
+			 W, H, badgeText, diamond, badgeSize, badgeMargin, accentColor);
 
-
-		 // Digital Signed Shield
-		 float shieldSize = Clamp(H * 0.25f, 16.f, 35.f); // slightly bigger looks nice
-		 float shieldMargin = Clamp(H * 0.03f, 4.f, 10.f);
-
-		 // Push it OUTSIDE the plate
+		 // Signature shield
+		 float shieldSize = Clamp(H * 0.25f, 16.f, 35.f);
 		 float sx = plateRect.right - shieldSize * 0.45f;
 		 float sy = plateRect.bottom - shieldSize * 0.75f;
-// 		 float sx = plateRect.right - shieldSize * 0.40f;
-// 		 float sy = plateRect.bottom - shieldSize * 0.40f;
-
-
-		 // If you draw a build strip at the bottom, lift the shield slightly so it doesn't overlap the strip
 		 sy -= (stripReserve > 0.0f ? stripReserve * 0.15f : 0.0f);
 
-		 if (isSigned)
+		 if (sigKind == SigKind::Embedded)
 			 DrawDigitalSignedShield(rt, sx, sy, shieldSize);
-
+		 else if (sigKind == SigKind::Catalog)
+			 DrawCatalogShield(rt, sx, sy, shieldSize);
 
 		 hr = rt->EndDraw();
 		 return hr;
@@ -1516,33 +1945,33 @@ public:
         std::map<std::wstring, std::wstring> kv;
         kv[L"DLLBitnessAsText"] = bitness;
 
+		  // Build variables to use in template expansion
+		  const wchar_t* keys[] =
+		  {
+				L"CompanyName", L"FileDescription", L"FileVersion",
+				L"InternalName", L"LegalCopyright",
+				L"OriginalFilename", L"ProductName", L"ProductVersion",
+				L"Comments", L"LegalTrademarks", L"PrivateBuild", L"SpecialBuild"
+		  };
+
         VersionInfoBlob vi;
-        if (!path.empty() && LoadVersionInfoBlob(path, vi))
-        {
-            std::wstring fileVer = QueryFixedFileVersion(vi);
-            if (fileVer.empty()) fileVer = L"(no version)";
-            kv[L"DLLFileVersionAsText"] = fileVer;
+		  bool hasVersion = (!path.empty() && LoadVersionInfoBlob(path, vi));
 
-            const wchar_t* keys[] =
-            {
-                L"CompanyName", L"FileDescription", L"FileVersion",
-                L"InternalName", L"LegalCopyright",
-                L"OriginalFilename", L"ProductName", L"ProductVersion",
-                L"Comments", L"LegalTrademarks", L"PrivateBuild", L"SpecialBuild"
-            };
+		  kv[L"DLLFileVersionAsText"] =
+			  hasVersion ?
+			  (QueryFixedFileVersion(vi).empty() ? L"(no version)" : QueryFixedFileVersion(vi))
+			  : L"(no version info)";
 
-            for (auto* k : keys)
-                kv[std::wstring(L"VI_") + k] = QueryVersionString(vi, k);
-        }
-        else
-        {
-            kv[L"DLLFileVersionAsText"] = L"(no version info)";
-            kv[L"VI_CompanyName"] = L"";
-            kv[L"VI_ProductName"] = L"";
-            kv[L"VI_FileDescription"] = L"";
-            kv[L"VI_ProductVersion"] = L"";
-            kv[L"VI_OriginalFilename"] = L"";
-        }
+		  for (auto* k : keys)
+		  {
+			  // VI = This variable comes from VERSIONINFO!
+			  std::wstring key = std::wstring(L"VI_") + k;
+
+			  if (hasVersion)
+				  kv[key] = QueryVersionString(vi, k);
+			  else
+				  kv[key] = L"";
+		  }
 
         if (!path.empty()) {
            kv[L"DllFileType"] = GetDllFileTypeFromPath(path);
@@ -1550,17 +1979,18 @@ public:
         else
            kv[L"DllFileType"] = L"UNKNOWN";
 
+		  kv[L"VI_FileDescriptionFirstSentence"] =
+			  FirstSentenceOrTruncate(kv[L"VI_FileDescription"]);
+
 
         std::wstring expanded = ExpandTokens(config.templ, kv);
-        std::vector<SmallRange> smallRanges;
-        std::wstring finalText = StripSmallTagsAndCollectRanges(expanded, smallRanges);
-        NormalizeNewlinesInPlace(finalText);
+        NormalizeNewlinesInPlace(expanded);
 
 		  BuildFlavor flavor = DetectBuildFlavor(path);
 
-		  bool isSigned = IsFileAuthenticodeSigned(path);
+		  SigKind sigKind = DetectSigKind(path);
 
-        hr = RenderTextThumb(config, bmp, params.desiredWidth, params.desiredHeight, finalText, smallRanges, bitness, flavor, isSigned);
+        hr = RenderTextThumb(config, bmp, params.desiredWidth, params.desiredHeight, expanded, bitness, flavor, sigKind);
         if (FAILED(hr)) return hr;
 
         *lplpOutputImage = bmp.Detach();

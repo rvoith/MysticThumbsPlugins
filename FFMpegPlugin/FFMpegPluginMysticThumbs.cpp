@@ -237,7 +237,7 @@ namespace ffmpegthumb {
 				reg.SetDword(L"", REG_COLLAGE_MIN_SECONDS, collageMinSeconds);
 			}
 
-			void DumpToLog(HMODULE hMod) const
+			void DumpToLog(HMODULE hMod) const 
 			{
 				if (!log.enabled)
 					return;
@@ -256,7 +256,7 @@ namespace ffmpegthumb {
 				LogMessage(L"  Collage4=" + std::to_wstring(collage4 ? 1 : 0));
 				LogMessage(L"  CollageMinS=" + std::to_wstring(collageMinSeconds));
 			}
-		} config;
+		} config; 
 
 		explicit CFFMpegPluginMysticThumbs(_In_ IMysticThumbsPluginContext* context)
 			: m_context(context), config(this)

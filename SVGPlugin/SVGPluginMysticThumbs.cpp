@@ -190,7 +190,7 @@ namespace svgthumb {
 				normRgbaStyle = (reg.GetDword(REG_NORM_SUBKEY, REG_NORM_RGBA_STYLE, 0) != 0);
 			}
 
-			void Save() const
+			void Save() const 
 			{
 				HKEY root = context ? context->GetPluginRegistryRootKey() : nullptr;
 				CSimpleRegistryHelper reg(root);
@@ -394,7 +394,7 @@ namespace svgthumb {
 		HRESULT Generate(_Inout_ MysticThumbsPluginGenerateParams& params,
 			_COM_Outptr_result_maybenull_ IWICBitmapSource** lplpOutputImage) override
 		{
-			config.Load();
+			config.Load(); 
 			BindLogConfig(&config.log);
 			ClearLogContext();
 			SetLogContextCall(params.desiredWidth);
