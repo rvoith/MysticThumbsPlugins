@@ -28,6 +28,10 @@
 #include <algorithm>
 
 
+static const wchar_t* REG_LOG_ENABLED = L"Log";
+static const wchar_t* REG_LOG_INCLUDE_CRC = L"LogIncludeCRC";
+static const wchar_t* REG_LOG_FILENAME = L"LogFileName";
+
 // ----------------------------------------------------------------------------
 // Forward decls (so helpers can log without ordering issues)
 // ----------------------------------------------------------------------------
@@ -43,6 +47,173 @@ static inline void LogMessage(const std::wstring& msg);
 #pragma comment(lib, "Version.lib")
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "uuid.lib")
+
+// ----------------------------------------------------------------------------
+// Simple Registry Helper (header-only)
+// ----------------------------------------------------------------------------
+class CSimpleRegistryHelper
+{
+public:
+	explicit CSimpleRegistryHelper(HKEY root = nullptr) : m_root(root) {}
+
+	void SetRoot(HKEY root) { m_root = root; }
+	HKEY  GetRoot() const { return m_root; }
+
+	bool HasDword(const wchar_t* subkey, const wchar_t* valueName, DWORD& out) const
+	{
+		out = 0;
+		if (!m_root || !valueName)
+			return false;
+
+		HKEY hKey = nullptr;
+		bool closeKey = false;
+
+		if (!subkey || subkey[0] == L'\0')
+		{
+			hKey = m_root;
+		}
+		else
+		{
+			if (RegOpenKeyExW(m_root, subkey, 0, KEY_READ, &hKey) != ERROR_SUCCESS)
+				return false;
+			closeKey = true;
+		}
+
+		DWORD type = 0;
+		DWORD cb = sizeof(DWORD);
+		DWORD val = 0;
+		LONG r = RegQueryValueExW(hKey, valueName, nullptr, &type, reinterpret_cast<LPBYTE>(&val), &cb);
+
+		if (closeKey)
+			RegCloseKey(hKey);
+
+		if (r != ERROR_SUCCESS || type != REG_DWORD)
+			return false;
+
+		out = val;
+		return true;
+	}
+
+	bool HasString(const wchar_t* subkey, const wchar_t* valueName, std::wstring& out) const
+	{
+		out.clear();
+		if (!m_root || !valueName)
+			return false;
+
+		HKEY hKey = nullptr;
+		bool closeKey = false;
+
+		if (!subkey || subkey[0] == L'\0')
+		{
+			hKey = m_root;
+		}
+		else
+		{
+			if (RegOpenKeyExW(m_root, subkey, 0, KEY_READ, &hKey) != ERROR_SUCCESS)
+				return false;
+			closeKey = true;
+		}
+
+		DWORD type = 0;
+		DWORD cb = 0;
+		LONG r = RegQueryValueExW(hKey, valueName, nullptr, &type, nullptr, &cb);
+		if (r != ERROR_SUCCESS || (type != REG_SZ && type != REG_EXPAND_SZ) || cb == 0)
+		{
+			if (closeKey) RegCloseKey(hKey);
+			return false;
+		}
+
+		std::vector<wchar_t> buf(cb / sizeof(wchar_t) + 2, 0);
+		r = RegQueryValueExW(hKey, valueName, nullptr, nullptr, reinterpret_cast<LPBYTE>(buf.data()), &cb);
+
+		if (closeKey)
+			RegCloseKey(hKey);
+
+		if (r != ERROR_SUCCESS)
+			return false;
+
+		out.assign(buf.data());
+		return true;
+	}
+
+	// Value-returning APIs with defaults (your requested behavior)
+	DWORD GetDword(const wchar_t* subkey, const wchar_t* valueName, DWORD defValue = 0L) const
+	{
+		DWORD v = 0;
+		return HasDword(subkey, valueName, v) ? v : defValue;
+	}
+
+	std::wstring GetString(const wchar_t* subkey, const wchar_t* valueName, const std::wstring& defValue = L"") const
+	{
+		std::wstring v;
+		return HasString(subkey, valueName, v) ? v : defValue;
+	}
+
+	bool SetDword(const wchar_t* subKey, const wchar_t* valueName, DWORD value) const
+	{
+		if (!m_root || !valueName)
+			return false;
+
+		HKEY hKey = nullptr;
+		bool closeKey = false;
+
+		if (!subKey || subKey[0] == L'\0')
+		{
+			hKey = m_root;
+		}
+		else
+		{
+			LONG r = RegCreateKeyExW(m_root, subKey, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &hKey, nullptr);
+			if (r != ERROR_SUCCESS)
+				return false;
+			closeKey = true;
+		}
+
+		LONG r = RegSetValueExW(hKey, valueName, 0, REG_DWORD,
+			reinterpret_cast<const BYTE*>(&value), sizeof(value));
+
+		if (closeKey)
+			RegCloseKey(hKey);
+
+		return r == ERROR_SUCCESS;
+	}
+
+	bool SetString(const wchar_t* subKey, const wchar_t* valueName, const std::wstring& value) const
+	{
+		if (!m_root || !valueName)
+			return false;
+
+		HKEY hKey = nullptr;
+		bool closeKey = false;
+
+		if (!subKey || subKey[0] == L'\0')
+		{
+			hKey = m_root;
+		}
+		else
+		{
+			LONG r = RegCreateKeyExW(m_root, subKey, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &hKey, nullptr);
+			if (r != ERROR_SUCCESS)
+				return false;
+			closeKey = true;
+		}
+
+		const DWORD cb = static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t));
+		LONG r = RegSetValueExW(hKey, valueName, 0, REG_SZ,
+			reinterpret_cast<const BYTE*>(value.c_str()), cb);
+
+		if (closeKey)
+			RegCloseKey(hKey);
+
+		return r == ERROR_SUCCESS;
+	}
+
+private:
+	HKEY m_root = nullptr;
+};
+
+
+
 
 static inline std::mutex& LogMutex()
 {
@@ -499,7 +670,7 @@ struct LogContext
 
 static inline LogConfigCommon*& BoundLogConfig()
 {
-	static LogConfigCommon* p = nullptr;
+	static thread_local LogConfigCommon* p = nullptr;
 	return p;
 }
 
@@ -645,6 +816,26 @@ void LogMessageUtf8F(const wchar_t* fmt, ...)
 	LogMessage(buffer);
 }
 
+void LogSessionHeader(const HMODULE hModule, const LogConfigCommon* log, const wchar_t* kBitness) {
+
+	// Get host PID and exe name
+	DWORD pid = GetCurrentProcessId();
+	wchar_t exePath[MAX_PATH]{};
+	GetModuleFileNameW(nullptr, exePath, _countof(exePath));
+	const wchar_t* exeName = wcsrchr(exePath, L'\\');
+	exeName = exeName ? exeName + 1 : exePath;
+
+	// This DLL's path and version
+	std::wstring dllPath = GetModulePathW(hModule);
+	std::wstring dllVer = GetModuleFileVersion(hModule); // store g_hModule from DllMain
+
+	LogMessage(L"Config:");
+	LogMessageF(L"  Process: PID=%lu, Host=%s, Bitness=%s", (ULONG)pid, exeName, GetProcessBitness().c_str());
+	LogMessageF(L"  DLL....: Path=%s", (dllPath.empty() ? L"(unknown)" : dllPath.c_str()));
+	LogMessageF(L"     DllFileVersion=%s, DllBitness=%s", (dllVer.empty() ? L"(unknown)" : dllVer.c_str()), kBitness);
+
+}
+
 
 static inline bool NormalizeRgbaFillInMemory(std::wstring& /*contents*/)
 {
@@ -744,149 +935,6 @@ static inline std::wstring PickFolder(HWND hOwner, const std::wstring& initialFo
 
 	pfd->Release();
 	return result;
-}
-
-static inline bool RegGetDword(HKEY root, const wchar_t* subkey, const wchar_t* valueName, DWORD& out)
-{
-	out = 0;
-
-	if (!root || !valueName)
-		return false;
-
-	HKEY hKey = nullptr;
-	bool closeKey = false;
-
-	// Allow subkey == nullptr or L"" to mean "use root directly".
-	if (!subkey || subkey[0] == L'\0')
-	{
-		hKey = root;
-	}
-	else
-	{
-		if (RegOpenKeyExW(root, subkey, 0, KEY_READ, &hKey) != ERROR_SUCCESS)
-			return false;
-		closeKey = true;
-	}
-
-	DWORD type = 0;
-	DWORD cb = sizeof(DWORD);
-	DWORD val = 0;
-	LONG r = RegQueryValueExW(hKey, valueName, nullptr, &type, (LPBYTE)&val, &cb);
-
-	if (closeKey)
-		RegCloseKey(hKey);
-
-	if (r != ERROR_SUCCESS || type != REG_DWORD)
-		return false;
-
-	out = val;
-	return true;
-}
-
-static inline bool RegGetString(HKEY root, const wchar_t* subkey, const wchar_t* valueName, std::wstring& out)
-{
-	out.clear();
-
-	if (!root || !valueName)
-		return false;
-
-	HKEY hKey = nullptr;
-	bool closeKey = false;
-
-	// Allow subkey == nullptr or L"" to mean "use root directly".
-	if (!subkey || subkey[0] == L'\0')
-	{
-		hKey = root;
-	}
-	else
-	{
-		if (RegOpenKeyExW(root, subkey, 0, KEY_READ, &hKey) != ERROR_SUCCESS)
-			return false;
-		closeKey = true;
-	}
-
-	DWORD type = 0;
-	DWORD cb = 0;
-	LONG r = RegQueryValueExW(hKey, valueName, nullptr, &type, nullptr, &cb);
-	if (r != ERROR_SUCCESS || (type != REG_SZ && type != REG_EXPAND_SZ) || cb == 0)
-	{
-		if (closeKey)
-			RegCloseKey(hKey);
-		return false;
-	}
-
-	std::vector<wchar_t> buf(cb / sizeof(wchar_t) + 2, 0);
-	r = RegQueryValueExW(hKey, valueName, nullptr, nullptr, (LPBYTE)buf.data(), &cb);
-
-	if (closeKey)
-		RegCloseKey(hKey);
-
-	if (r != ERROR_SUCCESS)
-		return false;
-
-	out.assign(buf.data());
-	return true;
-}
-
-static inline bool RegSetDword(HKEY root, const wchar_t* subKey, const wchar_t* valueName, DWORD value)
-{
-	if (!root || !valueName)
-		return false;
-
-	HKEY hKey = nullptr;
-	bool closeKey = false;
-
-	// Allow subKey == nullptr or L"" to mean "use root directly".
-	if (!subKey || subKey[0] == L'\0')
-	{
-		hKey = root;
-	}
-	else
-	{
-		LONG r = RegCreateKeyExW(root, subKey, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &hKey, nullptr);
-		if (r != ERROR_SUCCESS)
-			return false;
-		closeKey = true;
-	}
-
-	LONG r = RegSetValueExW(hKey, valueName, 0, REG_DWORD,
-		reinterpret_cast<const BYTE*>(&value), sizeof(value));
-
-	if (closeKey)
-		RegCloseKey(hKey);
-	 
-	return r == ERROR_SUCCESS;
-}
-
-static inline bool RegSetString(HKEY root, const wchar_t* subKey, const wchar_t* valueName, const std::wstring& value)
-{
-	if (!root || !valueName)
-		return false;
-
-	HKEY hKey = nullptr;
-	bool closeKey = false;
-
-	// Allow subKey == nullptr or L"" to mean "use root directly".
-	if (!subKey || subKey[0] == L'\0')
-	{
-		hKey = root;
-	}
-	else
-	{
-		LONG r = RegCreateKeyExW(root, subKey, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &hKey, nullptr);
-		if (r != ERROR_SUCCESS)
-			return false;
-		closeKey = true;
-	}
-
-	const DWORD cb = static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t));
-	LONG r = RegSetValueExW(hKey, valueName, 0, REG_SZ,
-		reinterpret_cast<const BYTE*>(value.c_str()), cb);
-
-	if (closeKey)
-		RegCloseKey(hKey);
-
-	return r == ERROR_SUCCESS;
 }
 
 static inline bool RunExternalThumbnailerCapture(const std::wstring& exePath,
@@ -1048,4 +1096,45 @@ static inline bool WriteStreamToFile(IStream* pStream, const std::wstring& path)
 	CloseHandle(h);
 	return ok;
 }
+
+// ----------------------------------------------------------------------------
+// Optional: synthetic debug image (useful to prove GenerateImage is called)
+// ----------------------------------------------------------------------------
+static unsigned char* MakeDebugImage(unsigned int desiredSize,
+	bool& hasAlpha,
+	unsigned int& width,
+	unsigned int& height)
+{
+	if (desiredSize == 0) desiredSize = 256;
+	width = height = desiredSize;
+	hasAlpha = true;
+
+	const size_t stride = (size_t)width * 4;
+	const size_t size = stride * (size_t)height;
+
+	unsigned char* buf = (unsigned char*)LocalAlloc(LMEM_FIXED, size);
+	if (!buf) return nullptr;
+
+	for (unsigned int y = 0; y < height; ++y)
+	{
+		for (unsigned int x = 0; x < width; ++x)
+		{
+			unsigned char* p = buf + (y * stride) + (x * 4);
+			bool diag = (x == y) || (x + 1 == y) || (x == y + 1);
+
+			if (diag)
+			{
+				p[0] = 0;   p[1] = 255; p[2] = 0;   p[3] = 255; // green
+			}
+			else
+			{
+				p[0] = 255; p[1] = 0;   p[2] = 255; p[3] = 255; // magenta
+			}
+		}
+	}
+
+	return buf;
+}
+
+
 

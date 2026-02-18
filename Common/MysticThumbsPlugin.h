@@ -30,6 +30,19 @@
 //            LocalAlloc / StrDup no longer needed for GetName, GetExtension
 //              etc. calls. Strings are copied by the caller.
 // 
+// 
+// 
+// !!! A NOTE ON DEPLOYMENT OF YOUR .mtp AND ASSOCIATED DLLs !!!
+// 
+// This is a suggestion, not a hard rule but it will help your plugins load when they may be dependent on other DLLs.
+// 
+// In the Plugins folder, either for the current user or all users, create two folders:
+// One named "32" and one named "64".
+// Put your respective 32 bit and 64 bit plugin DLLs in these folders ALONG SIDE any dependencies they may need.
+// This will keep the 32 and 64 bit plugins separated and ensure that loading by higher security processes such as StartMenuExperienceHost.exe works correctly.
+// The dependent DLLs should all be in the same folder as the .mtp plugin DLL to ensure loading in high security processes
+// such as sandboxed / Windows Store or system applications (such as StartMenuExperienceHost.exe).
+// 
 /////////////////////////////////////////////////////////////////////////////
 
 #pragma once
@@ -136,12 +149,14 @@ struct MysticThumbsPluginPing
 //
 /////////////////////////////////////////////////////////////////////////////
 
-struct IMysticThumbsPluginContext : public IMysticThumbsLog
+struct IMysticThumbsPluginContext
 {
     /// <summary>
-    /// Get the stream we are reading from.
+    /// Get the stream we are reading from. The stream is valid for the lifetime of the plugin instance.
+    /// Note, this is not AddRef'ed so there is no need to Release() it. You could however if you wish
+    /// use a smart pointer such as ATL CComPtr if you wish to manage your usage lifetime of it.
     /// </summary>
-    /// <returns></returns>
+    /// <returns>The COM IStream handle.</returns>
     virtual _Check_return_ IStream* GetStream() const = 0;
 
     /// <summary>
@@ -154,12 +169,30 @@ struct IMysticThumbsPluginContext : public IMysticThumbsLog
     /// <summary>
     /// Get the root key the plugin should use to save/load configuration settings to the registry.
     /// Each user gets their own registry settings on a multi-user machine.
-    /// The returned handle should be closed after immediate use with RegCloseKey() to avoid open handles.
-    /// An easier way is to use ATL CRegKey or similar RAII wrapper to manage the handle lifetime in a local context. See the example plugin.
+    /// The returned handle is live for the lifetime of the instance and should NOT be closed with RegCloseKey().
     /// WARNING: This can not be called until after CreateInstance() has been completed. Do not call from a plugin constructor. It will return NULL there.
     /// </summary>
     /// <returns>A registry HKEY root key where your plugin config is stored. NULL if error.</returns>
     virtual _Check_return_ HKEY GetPluginRegistryRootKey() const = 0;
+
+    /// <summary>
+    /// Determines if tooltips are enabled.
+    /// </summary>
+    /// <returns>true if tooltips are enabled in the control panel.</returns>
+    virtual _Check_return_ bool TooltipsEnabled() const = 0;
+
+    /// <summary>
+    /// Determines if dark mode is enabled for the current process.
+    /// This may be useful for configuration dialogs or possibly even thumbnail generation if you want to match the system theme.
+    /// </summary>
+    /// <returns>true if the process is detected as being in dark mode.</returns>
+    virtual _Check_return_ bool IsDarkMode() const = 0;
+
+    /// <summary>
+    /// Get the logging interface for this plugin instance.
+    /// </summary>
+    /// <returns>The logging interface </returns>
+    virtual _Check_return_ const IMysticThumbsLog* Log() const = 0;
 };
 
 
@@ -282,8 +315,9 @@ public:
     virtual bool GetCapabilities(_Out_ MysticThumbsPluginCapabilities& capabilities) = 0;
 
     /// <summary>
-    /// Allows the plugin to be configured if needed by opening a modal dialog box or similar and storing settings in the registry or a file etc.
+    /// Allows the plugin to be configured if needed by opening a modal dialog box and storing settings in the registry.
     /// </summary>
+    /// <param name="hWndParent">Handle to the parent window for the configuration dialog. It's important to use this for correct Windows behaviour.</param>
     /// <returns>false if nothing was done or configuration is not supported. true if something was done.</returns>
     virtual bool Configure(_In_ HWND hWndParent) = 0;
 

@@ -1,3 +1,3 @@
 # MysticThumbsPlugins
 
-Public shadow export of MysticThumbs plugin sources/projects.
+Create your own plugins for MysticThumbs from MysticCoder.net! 
