@@ -114,6 +114,8 @@ enum class SigKind
 
 static bool HasEmbeddedSignatureBlob(const std::wstring& path)
 {
+	if (path.empty()) return false;
+
 	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ,
 		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
 		nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -126,22 +128,49 @@ static bool HasEmbeddedSignatureBlob(const std::wstring& path)
 	if (!base) { CloseHandle(map); CloseHandle(h); return false; }
 
 	bool has = false;
+
 	__try
 	{
 		auto* dos = (IMAGE_DOS_HEADER*)base;
-		if (dos->e_magic == IMAGE_DOS_SIGNATURE)
-		{
-			auto* nt = (IMAGE_NT_HEADERS*)(base + dos->e_lfanew);
-			if (nt->Signature == IMAGE_NT_SIGNATURE)
-			{
-				const auto& dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_SECURITY];
-				// NOTE: security directory uses FILE OFFSET, not RVA. Non-zero => embedded signature exists.
-				if (dir.VirtualAddress != 0 && dir.Size != 0)
-					has = true;
-			}
-		}
+		if (dos->e_magic != IMAGE_DOS_SIGNATURE)
+			__leave;
+
+		BYTE* ntp = base + dos->e_lfanew;
+		DWORD sig = *(DWORD*)ntp;
+		if (sig != IMAGE_NT_SIGNATURE)
+			__leave;
+
+		// FILE_HEADER sits right after signature
+		auto* fh = (IMAGE_FILE_HEADER*)(ntp + sizeof(DWORD));
+
+		// Optional header begins after FILE_HEADER
+		BYTE* opt = (BYTE*)fh + sizeof(IMAGE_FILE_HEADER);
+
+		// Read OptionalHeader.Magic to decide PE32 vs PE32+
+		WORD magic = *(WORD*)opt;
+
+		// DataDirectory offset differs between PE32 and PE32+
+		size_t ddOff = 0;
+		if (magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC)       // 0x10B
+			ddOff = offsetof(IMAGE_OPTIONAL_HEADER32, DataDirectory);
+		else if (magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC)  // 0x20B
+			ddOff = offsetof(IMAGE_OPTIONAL_HEADER64, DataDirectory);
+		else
+			__leave;
+
+		// Security directory is entry index 4
+		const size_t secOff = ddOff + IMAGE_DIRECTORY_ENTRY_SECURITY * sizeof(IMAGE_DATA_DIRECTORY);
+
+		IMAGE_DATA_DIRECTORY sec{};
+		memcpy(&sec, opt + secOff, sizeof(sec));
+
+		// Note: for SECURITY directory, "VirtualAddress" is a FILE OFFSET, not RVA.
+		has = (sec.VirtualAddress != 0 && sec.Size != 0);
 	}
-	__except (EXCEPTION_EXECUTE_HANDLER) { has = false; }
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		has = false;
+	}
 
 	UnmapViewOfFile(base);
 	CloseHandle(map);

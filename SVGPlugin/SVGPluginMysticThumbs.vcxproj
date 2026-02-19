@@ -131,7 +131,7 @@
       <AdditionalDependencies>resvg.lib;Ws2_32.lib;Userenv.lib;ntdll.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
       <EnableCOMDATFolding>false</EnableCOMDATFolding>
-      <OutputFile>$(AppData)\MysticThumbs\Plugins\$(TargetName)$(TargetExt)</OutputFile>
+      <OutputFile>$(AppData)\MysticThumbs\Plugins\$(PlatformArchitecture)\$(TargetName)$(TargetExt)</OutputFile>
     </Link>
     <PreBuildEvent>
       <Command>
@@ -183,10 +183,10 @@
       </Command>
     </PreBuildEvent>
     <PostBuildEvent>
-      <Command>CopyFileWithAdminRights "$(TargetPath)" "$(AppData)\MysticThumbs\Plugins" </Command>
+      <Command>CopyFileWithAdminRights "$(TargetPath)" "$(AppData)\MysticThumbs\Plugins\$(PlatformArchitecture)" </Command>
     </PostBuildEvent>
     <PostBuildEvent>
-      <Message>Copy release-plugin ("$(TargetPath)") to MysticThumbs local user plugin-directory "$(AppData)\MysticThumbs\Plugins" </Message>
+      <Message>Copy release-plugin ("$(TargetPath)") to MysticThumbs local user plugin-directory "$(AppData)\MysticThumbs\Plugins\$(PlatformArchitecture)" </Message>
     </PostBuildEvent>
   <PreLinkEvent><Command /><Message /></PreLinkEvent></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -212,10 +212,10 @@
       </Command>
     </PreBuildEvent>
     <PostBuildEvent>
-      <Command>CopyFileWithAdminRights "$(TargetPath)" "$(AppData)\MysticThumbs\Plugins" </Command>
+      <Command>CopyFileWithAdminRights "$(TargetPath)" "$(AppData)\MysticThumbs\Plugins\$(PlatformArchitecture)" </Command>
     </PostBuildEvent>
     <PostBuildEvent>
-      <Message>Copy release-plugin ("$(TargetPath)") to MysticThumbs local user plugin-directory "$(AppData)\MysticThumbs\Plugins" </Message>
+      <Message>Copy release-plugin ("$(TargetPath)") to MysticThumbs local user plugin-directory "$(AppData)\MysticThumbs\Plugins\$(PlatformArchitecture)" </Message>
     </PostBuildEvent>
   <PreLinkEvent><Command /><Message /></PreLinkEvent></ItemDefinitionGroup>
   <ItemGroup>
