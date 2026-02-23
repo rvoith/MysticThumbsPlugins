@@ -31,6 +31,12 @@
 //              etc. calls. Strings are copied by the caller.
 // 
 // 
+// Visual Studio / C++ / ATL and implementation notes:
+// - Try to use CComPtr smart pointers for COM interfaces such as IStream, IWICBitmapSource, etc. to manage lifetimes and avoid leaks.
+// - Use CRegKey to manage registry keys and values for configuration storage. This is a simple wrapper around the Windows registry API that provides some convenience functions and RAII semantics.
+// -- Don't cache registry values because they may change between calls to Generate() or Ping(). Instead, read from the registry as needed in these functions to ensure you have the latest values. CRegKey makes this easy and efficient.
+// - Use the logging interface provided by MysticThumbs via the plugin context for logging. This ensures that your logs are integrated with MysticThumbs' logging system and appear in the correct order relative to other log messages.
+// - Generate() can return a bitmap not in BGRA or PBGRA format, so you can avoid manual swizzling and format conversions. MysticThumbs will take care of it.
 // 
 // !!! A NOTE ON DEPLOYMENT OF YOUR .mtp AND ASSOCIATED DLLs !!!
 // 
@@ -110,7 +116,7 @@ enum MysticThumbsPluginPingFlags : unsigned int
     MysticThumbsPluginPingFlags_None = 0x00000000,
     MysticThumbsPluginPingFlags_QuickView = 0x00000001,    // Ping is for QuickView
     MysticThumbsPluginPingFlags_Properties = 0x00000002,   // Ping wants properties only. always true if QuickView, otherwise no image generation is likely to follow (no guarantee)
-};  
+};
 DEFINE_ENUM_FLAG_OPERATORS(MysticThumbsPluginPingFlags)
 
 struct MysticThumbsPluginPing
@@ -171,6 +177,8 @@ struct IMysticThumbsPluginContext
     /// Each user gets their own registry settings on a multi-user machine.
     /// The returned handle is live for the lifetime of the instance and should NOT be closed with RegCloseKey().
     /// WARNING: This can not be called until after CreateInstance() has been completed. Do not call from a plugin constructor. It will return NULL there.
+    /// NOTE: Highly recommended you use atlbase.h / CRegKey 'smart objects' to manage your registry values and sub-key / values from this base.
+    ///       See the ATL documentation for more details.
     /// </summary>
     /// <returns>A registry HKEY root key where your plugin config is stored. NULL if error.</returns>
     virtual _Check_return_ HKEY GetPluginRegistryRootKey() const = 0;
@@ -193,6 +201,14 @@ struct IMysticThumbsPluginContext
     /// </summary>
     /// <returns>The logging interface </returns>
     virtual _Check_return_ const IMysticThumbsLog* Log() const = 0;
+
+    /// <summary>
+    /// Check if this is a default instance used by MysticThumbs control panel or plugin helper functions to gather plugin specific information.
+    /// A default instance is not used for image generation.
+    /// This could possibly be checked to setup DLL module global settings that *ABSOLUTELY WILL NOT change* during the lifetime of the plugin DLL.
+    /// </summary>
+    /// <returns>true if this is a default instance.</returns>
+    virtual _Check_return_ bool IsDefaultInstance() const = 0;
 };
 
 
@@ -201,7 +217,8 @@ struct IMysticThumbsPluginContext
 enum MysticThumbsPluginCapabilities : unsigned int
 {
     PluginCapabilities_CanConfigure = 0x00000001, // Supports Configure() to allow configuration of the plugin
-    PluginCapabilities_CanNonUniformSize = 0x00000010, // Allows resizing to in QuickView without locking aspect ratio. should only be set if the plugin can handle non-square thumbnails for example computation-generated images. For normal images this should not be set.
+    PluginCapabilities_CanNonUniformSize = 0x00000010, // Allows resizing to in QuickView without locking aspect ratio. Should only be set if the plugin can handle non-square thumbnails for example computation-generated images or resizable paper-like documents. For normal images this should not be set.
+    PluginCapabilities_IsProcedural = 0x00000020, // Indicates this plugin generates procedural images. Useful for QuickView to automatically refresh when resized and some other things. For normal images this should not be set.
 };
 DEFINE_ENUM_FLAG_OPERATORS(MysticThumbsPluginCapabilities)
 
@@ -215,6 +232,8 @@ DEFINE_ENUM_FLAG_OPERATORS(MysticThumbsPluginCapabilities)
 // 
 /////////////////////////////////////////////////////////////////////////////
 
+// Gerneration flags. Note we use bit flags here for easier reading in the debugger due to DEFINE_ENUM_FLAG_OPERATORS,
+// even though it doesn't make sense to have two transparency flags set at once etc.
 enum MysticThumbsPluginFlags : unsigned int
 {
     // NOTE: these have changed since version 2. They are still hints but are now in different orders. Recompile may be needed.
@@ -238,7 +257,7 @@ enum MysticThumbsPluginFlags : unsigned int
     // Output flags up in the high bits.
 
     // Hint about alpha. Output flag hint from plugin.
-    MT_HasAlpha = 0x00010000,
+    MT_HasAlpha = 0x10000000,
 };
 DEFINE_ENUM_FLAG_OPERATORS(MysticThumbsPluginFlags)
 

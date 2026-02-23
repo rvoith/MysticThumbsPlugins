@@ -16,7 +16,7 @@
 #include <shobjidl.h>
 #include <strsafe.h>
 #include <stdint.h>
-#include <mutex>
+#include <atlbase.h>
 
 #include <string>
 #include <vector>
@@ -26,6 +26,7 @@
 #include <iomanip>
 #include <cstdint>
 #include <algorithm>
+#include <type_traits>
 
 
 static const wchar_t* REG_LOG_ENABLED = L"Log";
@@ -47,6 +48,55 @@ static inline void LogMessage(const std::wstring& msg);
 #pragma comment(lib, "Version.lib")
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "uuid.lib")
+
+
+// ----------------------------------------------------------------------------
+// Ian's Simple Registry Helper (header-only)
+// Add helper methods to CRegKey without modifying the original class
+// ----------------------------------------------------------------------------
+template <bool TCloseOnDestruct = true>
+class CRegKeyHelper final : public CRegKey
+{
+public:
+    CRegKeyHelper(HKEY hKey) : CRegKey(hKey) {}
+    CRegKeyHelper() = default;
+    // Safety
+    CRegKeyHelper(const CRegKeyHelper&) = delete;
+    CRegKeyHelper(CRegKeyHelper&&) = delete;
+    CRegKeyHelper& operator=(const CRegKeyHelper&) = delete;
+
+    ~CRegKeyHelper() {
+        if(!TCloseOnDestruct)
+            Detach();
+    }
+
+    /// <summary>
+    /// Query for a wstring value from a REG_SZ, with optional default value.
+    /// On success, the output string will contain the value (without the null terminator).
+    /// On failure, the output string will be left empty.
+    /// </summary>
+    /// <param name="pszValueName">Value name to query</param>
+    /// <param name="value">Output value if success</param>
+    /// <returns>ERROR_SUCCESS if the string existed and was returned or if the value didn't exist and a default string was supplied.</returns>
+    LSTATUS QueryStringValue(_In_ LPCWSTR pszValueName, _Out_ std::wstring& value, _In_opt_z_ LPCWSTR pszDefaultValue = nullptr)
+    {
+        value.clear();
+        DWORD nChars{}; // on success nChars will include the null terminator, on failure it will be 0
+        LSTATUS lRet = __super::QueryStringValue(pszValueName, nullptr, &nChars);
+        if(lRet == ERROR_SUCCESS && nChars > 0) {
+            value.resize(size_t(nChars - 1));
+            lRet = __super::QueryStringValue(pszValueName, &value[0], &nChars);
+            if(lRet == ERROR_SUCCESS) {
+                return lRet;
+            }
+        }
+        if(pszDefaultValue) {
+            value = pszDefaultValue;
+            return ERROR_SUCCESS;
+        }
+        return lRet;
+    }
+};
 
 // ----------------------------------------------------------------------------
 // Simple Registry Helper (header-only)
@@ -460,16 +510,22 @@ static inline std::wstring GetTempDirectory(const std::wstring& path)
 
 static inline std::wstring GetText(HWND hDlg, int id)
 {
-	wchar_t buf[2048]{};
-	GetDlgItemTextW(hDlg, id, buf, static_cast<int>(std::size(buf)));
-	return std::wstring(buf);
+	// use the heap / stl directly instead of nasty fixed length stack allocated buffers
+	std::wstring buf;
+	HWND item = ::GetDlgItem(hDlg, id);
+	if(!item) return buf;
+	buf.resize(::GetWindowTextLengthW(item));
+	if(buf.length()) GetWindowTextW(item, &buf[0], static_cast<int>(buf.length() + 1));
+	return buf;
 }
 
-static inline DWORD GetUInt(HWND hDlg, int id, DWORD defValue)
+// Probably should be called GetIntT or something else
+template<typename T = DWORD>
+static inline T GetUInt(HWND hDlg, const int nIDDlgItem, const T defValue)
 {
 	BOOL ok = FALSE;
-	UINT v = GetDlgItemInt(hDlg, id, &ok, FALSE);
-	return ok ? static_cast<DWORD>(v) : defValue;
+	UINT v = GetDlgItemInt(hDlg, nIDDlgItem, &ok, (BOOL)std::is_signed<T>());
+	return ok ? static_cast<T>(v) : defValue;
 }
 
 static inline bool MakeTempFilePair(const std::wstring& tempDir, const std::wstring& outFileExt,  std::wstring& outFile, std::wstring& outPng)
@@ -654,8 +710,8 @@ static unsigned char* LoadPngToRgbaBuffer(const std::wstring& pngPath,
 // ----------------------------------------------------------------------------
 struct LogConfigCommon
 {
-	bool enabled = false;
-	bool includeCRC = true;
+    DWORD enabled = false;   // using DWORD instead of bool for registry convenience (0/1)
+	DWORD includeCRC = true; // ditto
 	std::wstring fileName;
 };
 
