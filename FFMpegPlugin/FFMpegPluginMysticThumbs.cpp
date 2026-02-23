@@ -904,7 +904,7 @@ namespace ffmpegthumb {
 				hr = factory->CreateBitmap(
 					w,
 					h,
-					GUID_WICPixelFormat32bppRGBA,
+					config.swapRB ? GUID_WICPixelFormat32bppRGBA : GUID_WICPixelFormat32bppBGRA,
 					WICBitmapCacheOnLoad,
 					&owned);
 
