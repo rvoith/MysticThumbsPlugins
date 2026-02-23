@@ -19,7 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{90E0F638-38F2-4CBB-8581-6F77E422A75D}</ProjectGuid>
+    <ProjectGuid>{AFF0EDF8-4F68-4F38-9AA4-150DCD3E0525}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>SVGPluginMysticThumbs</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>

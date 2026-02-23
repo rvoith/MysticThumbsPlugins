@@ -234,7 +234,7 @@ namespace ffmpegthumb {
 				reg.SetString(REG_THUMB_SUBKEY, REG_THUMB_PARAMS, thumbParams);
 
 				reg.SetDword(L"", REG_COLLAGE_ENABLE, collage4 ? 1u : 0u);
-				reg.SetDword(L"", REG_COLLAGE_MIN_SECONDS, collageMinSeconds);
+				reg.SetDword(L"", REG_COLLAGE_MIN_SECONDS, collageMinSeconds); 
 			}
 
 			void DumpToLog(HMODULE hMod) const 

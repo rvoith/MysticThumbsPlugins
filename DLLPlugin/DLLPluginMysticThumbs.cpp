@@ -116,7 +116,7 @@ static bool HasEmbeddedSignatureBlob(const std::wstring& path)
 {
 	if (path.empty()) return false;
 
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ,
+	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, 
 		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
 		nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (h == INVALID_HANDLE_VALUE) return false;
@@ -128,7 +128,7 @@ static bool HasEmbeddedSignatureBlob(const std::wstring& path)
 	if (!base) { CloseHandle(map); CloseHandle(h); return false; }
 
 	bool has = false;
-
+	
 	__try
 	{
 		auto* dos = (IMAGE_DOS_HEADER*)base;

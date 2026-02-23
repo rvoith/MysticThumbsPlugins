@@ -19,7 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{90E0F638-38F2-4CBB-8581-6F77E422A75D}</ProjectGuid>
+    <ProjectGuid>{BF491EAD-7E22-45CC-A18C-1D92E7CA689C}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>FFMpegPluginMysticThumbs</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
