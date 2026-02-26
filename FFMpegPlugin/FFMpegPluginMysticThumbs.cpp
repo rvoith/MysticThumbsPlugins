@@ -3,7 +3,7 @@
 // Avoid the std::max error:
 // error C2589: '(': illegal token on right side of '::'
 #define NOMINMAX 
- 
+
 #include "FFMpegPluginMysticThumbs.h" 
 #include "..\\Common\\MysticThumbsPlugin.h"
 #include "..\\Common\\SharedMysticThumbsPlugin.h"
@@ -31,14 +31,12 @@ extern "C" {
 
 #include <string>
 #include <sstream>
+#include <cstdarg>
 #include <vector>
 #include <mutex>
 #include <algorithm>
 #include <cmath>
 
-// MT V3 headers
-#include <wrl/client.h>
-using Microsoft::WRL::ComPtr;
 
 
 // ----------------------------------------------------------------------------
@@ -69,7 +67,6 @@ using Microsoft::WRL::ComPtr;
 
 #pragma comment(lib, "Version.lib")
 
-namespace ffmpegthumb {
 
 	// ----------------------------------------------------------------------------
 	// Plugin identity / supported extensions
@@ -87,7 +84,6 @@ namespace ffmpegthumb {
 		L".mp3", L".aac", L".m4a", L".flac", L".ogg", L".wav"
 	};
 
-	// {ECA56B2F-BB26-4507-8D3C-7F25968D34F8}
 	static const GUID s_guid =
 	{ 0xeca56b2f, 0xbb26, 0x4507, { 0x8d, 0x3c, 0x7f, 0x25, 0x96, 0x8d, 0x34, 0xf8 } };
 
@@ -116,31 +112,25 @@ namespace ffmpegthumb {
 	static const wchar_t* REG_THUMB_PATH = L"Path";
 	static const wchar_t* REG_THUMB_PARAMS = L"Params";
 
-	static const wchar_t* REG_COLLAGE_ENABLE = L"Collage4";         
-	static const wchar_t* REG_COLLAGE_MIN_SECONDS = L"CollageMinS";  
+	static const wchar_t* REG_COLLAGE_ENABLE = L"Collage4";
+	static const wchar_t* REG_COLLAGE_MIN_SECONDS = L"CollageMinS";
 
 
 	static HMODULE g_hModule = nullptr;
 
-	// ------------------------------------------------------------------------
-	// Configure dialog forward decl (implementation is below class definition)
-	// ------------------------------------------------------------------------
-	static INT_PTR CALLBACK FFMpegConfigureDialogProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam);
 
-
-	class CFFMpegPluginMysticThumbs : public IMysticThumbsPlugin
+	class CFFMpegPlugin : public IMysticThumbsPlugin
 	{
-	public:
+	private:
+		MysticLogTag  m_logTag;
+	
 		// Valid for lifetime through the lifetime of the plugin instance until the end of Destroy
-		IMysticThumbsPluginContext* m_context = nullptr;
+		IMysticThumbsPluginContext* m_context{};
 		const IMysticThumbsLog* m_log{};
 
 		struct PluginConfig
 		{
-			IMysticThumbsPluginContext* context = nullptr;
-
-			// Logging
-			LogConfigCommon log{};
+			IMysticThumbsPluginContext* context;
 
 			// Main config
 			bool leaveTempFiles = false;
@@ -162,103 +152,100 @@ namespace ffmpegthumb {
 			std::wstring thumbParams;
 
 			PluginConfig() = default;
-			explicit PluginConfig(CFFMpegPluginMysticThumbs* p) { context = p ? p->m_context : nullptr; }
+			explicit PluginConfig(CFFMpegPlugin* p) { context = p ? p->m_context : nullptr; }
 
 			void Load()
 			{
-				HKEY root = context ? context->GetPluginRegistryRootKey() : nullptr;
-				CSimpleRegistryHelper reg(root);
+				ATLASSUME(context);
 
-				// Logging
-				LogConfigCommon log{};
+				HKEY hRoot = context ? context->GetPluginRegistryRootKey() : nullptr;
+				if (!hRoot)
+					return;
 
-				// Main config
+				// IMPORTANT: Do not close MysticThumbs' HKEY.
+				CRegKeyHelper<false> root(hRoot);
+
+				// Defaults
 				leaveTempFiles = false;
 				swapRB = true;
 				returnDebugFFMpegThumbnail = false;
 				useDesiredSizeHint = false;
 				maxFFMpegDim = 4096;
-				maxFFMpegBytes = 256 * 1024 * 1024;
+				maxFFMpegBytes = 256u * 1024u * 1024u;
 
-				// Log
-				log.enabled = (reg.GetDword(L"", REG_LOG_ENABLED, 0) != 0);
-				log.includeCRC = (reg.GetDword(L"", REG_LOG_INCLUDE_CRC, 1) != 0);
-				log.fileName = reg.GetString(L"", REG_LOG_FILENAME, L"");
+				collage4 = false;
+				collageMinSeconds = 8;
 
-				// Main toggles
-				leaveTempFiles = (reg.GetDword(L"", REG_LEAVE_TEMP, 0) != 0);
-				swapRB = (reg.GetDword(L"", REG_SWAP_RB, 1) != 0);
-				returnDebugFFMpegThumbnail = (reg.GetDword(L"", REG_RETURN_DEBUG_FFMpeg_TN, 0) != 0);
-				useDesiredSizeHint = (reg.GetDword(L"", REG_USE_DESIRED_SIZE_HINT, 0) != 0);
 
-				// Limits
-				maxFFMpegDim = reg.GetDword(L"", REG_MAX_FFMpeg_DIM, 4096);
-				maxFFMpegBytes = reg.GetDword(L"", REG_MAX_FFMpeg_BYTES, 256u * 1024u * 1024u);
+				DWORD d = 0;
+				if (root.QueryDWORDValue(REG_LEAVE_TEMP, d) == ERROR_SUCCESS) leaveTempFiles = (d != 0);
+				if (root.QueryDWORDValue(REG_SWAP_RB, d) == ERROR_SUCCESS) swapRB = (d != 0);
+				if (root.QueryDWORDValue(REG_RETURN_DEBUG_FFMpeg_TN, d) == ERROR_SUCCESS) returnDebugFFMpegThumbnail = (d != 0);
+				if (root.QueryDWORDValue(REG_USE_DESIRED_SIZE_HINT, d) == ERROR_SUCCESS) useDesiredSizeHint = (d != 0);
+
+				if (root.QueryDWORDValue(REG_MAX_FFMpeg_DIM, d) == ERROR_SUCCESS) maxFFMpegDim = d;
+				if (root.QueryDWORDValue(REG_MAX_FFMpeg_BYTES, d) == ERROR_SUCCESS) maxFFMpegBytes = d;
+
+				if (root.QueryDWORDValue(REG_COLLAGE_ENABLE, d) == ERROR_SUCCESS) collage4 = (d != 0);
+				if (root.QueryDWORDValue(REG_COLLAGE_MIN_SECONDS, d) == ERROR_SUCCESS) collageMinSeconds = d;
 
 				// External thumbnailer
-				thumbPath = reg.GetString(REG_THUMB_SUBKEY, REG_THUMB_PATH, L"");
-				thumbParams = reg.GetString(REG_THUMB_SUBKEY, REG_THUMB_PARAMS, L"");
+				thumbEnabled = false;
+				thumbPath.clear();
+				thumbParams.clear();
+				CRegKeyHelper<> sub;
+				if (sub.Open(root, REG_THUMB_SUBKEY, KEY_READ) == ERROR_SUCCESS)
+				{
+					(void)sub.QueryStringValue(REG_THUMB_PATH, thumbPath);
+					(void)sub.QueryStringValue(REG_THUMB_PARAMS, thumbParams);
 
-				// Preserve your earlier “tri-state” behavior:
-				// - If Enabled exists: respect it.
-				// - If missing: enable when thumbPath is set.
-				DWORD enabledVal = 0;
-				const bool hasEnable = reg.HasDword(REG_THUMB_SUBKEY, REG_THUMB_ENABLED, enabledVal);
-				thumbEnabled = hasEnable ? (enabledVal != 0) : (!thumbPath.empty());
+					DWORD enabledVal = 0;
+					const LSTATUS hasEnable = sub.QueryDWORDValue(REG_THUMB_ENABLED, enabledVal);
 
-
-				// Collage settings
-				collage4 = (reg.GetDword(L"", REG_COLLAGE_ENABLE, 0) != 0);
-				collageMinSeconds = reg.GetDword(L"", REG_COLLAGE_MIN_SECONDS, 8);
+					// Preserve earlier behavior:
+					// - If Enabled exists: respect it.
+					// - If missing: enable when thumbPath is set.
+					thumbEnabled = (hasEnable == ERROR_SUCCESS) ? (enabledVal != 0) : (!thumbPath.empty());
+				}
+				else
+				{
+					thumbEnabled = false;
+				}
 			}
 
-			void Save() const
+			void Save(HWND hDlg) const
 			{
-				HKEY root = context ? context->GetPluginRegistryRootKey() : nullptr;
-				CSimpleRegistryHelper reg(root);
-
-				reg.SetDword(L"", REG_LOG_ENABLED, log.enabled ? 1u : 0u);
-				reg.SetDword(L"", REG_LOG_INCLUDE_CRC, log.includeCRC ? 1u : 0u);
-				reg.SetString(L"", REG_LOG_FILENAME, log.fileName);
-
-				reg.SetDword(L"", REG_LEAVE_TEMP, leaveTempFiles ? 1u : 0u);
-				reg.SetDword(L"", REG_SWAP_RB, swapRB ? 1u : 0u);
-				reg.SetDword(L"", REG_RETURN_DEBUG_FFMpeg_TN, returnDebugFFMpegThumbnail ? 1u : 0u);
-				reg.SetDword(L"", REG_USE_DESIRED_SIZE_HINT, useDesiredSizeHint ? 1u : 0u); 
-
-				reg.SetDword(L"", REG_MAX_FFMpeg_DIM, maxFFMpegDim);
-				reg.SetDword(L"", REG_MAX_FFMpeg_BYTES, maxFFMpegBytes);
-
-				reg.SetDword(REG_THUMB_SUBKEY, REG_THUMB_ENABLED, thumbEnabled ? 1u : 0u);
-				reg.SetString(REG_THUMB_SUBKEY, REG_THUMB_PATH, thumbPath);
-				reg.SetString(REG_THUMB_SUBKEY, REG_THUMB_PARAMS, thumbParams);
-
-				reg.SetDword(L"", REG_COLLAGE_ENABLE, collage4 ? 1u : 0u);
-				reg.SetDword(L"", REG_COLLAGE_MIN_SECONDS, collageMinSeconds); 
-			}
-
-			void DumpToLog(HMODULE hMod) const 
-			{
-				if (!log.enabled)
+				HKEY hRoot = context ? context->GetPluginRegistryRootKey() : nullptr;
+				if (!hRoot)
 					return;
 
-				LogSessionHeader(hMod, &log, kBitness);
+				CRegKeyHelper<false> root(hRoot);
 
-				LogMessage(L"  LeaveTempFiles=" + std::to_wstring(leaveTempFiles ? 1 : 0));
-				LogMessage(L"  SwapRB=" + std::to_wstring(swapRB ? 1 : 0));
-				LogMessage(L"  ReturnDebugFFMpegThumbnail=" + std::to_wstring(returnDebugFFMpegThumbnail ? 1 : 0));
-				LogMessage(L"  UseDesiredSizeHint=" + std::to_wstring(useDesiredSizeHint ? 1 : 0));
-				LogMessage(L"  MaxFFMpegDim=" + std::to_wstring(maxFFMpegDim));
-				LogMessage(L"  MaxFFMpegBytes=" + std::to_wstring(maxFFMpegBytes));
-				LogMessage(L"  ThumbEnabled=" + std::to_wstring(thumbEnabled ? 1 : 0));
-				LogMessage(L"  ThumbPath=" + thumbPath);
-				LogMessage(L"  ThumbParams=" + thumbParams);
-				LogMessage(L"  Collage4=" + std::to_wstring(collage4 ? 1 : 0));
-				LogMessage(L"  CollageMinS=" + std::to_wstring(collageMinSeconds));
+				(void)root.SetDWORDValue(REG_LEAVE_TEMP, leaveTempFiles ? 1u : 0u);
+				(void)root.SetDWORDValue(REG_SWAP_RB, swapRB ? 1u : 0u);
+				(void)root.SetDWORDValue(REG_RETURN_DEBUG_FFMpeg_TN, returnDebugFFMpegThumbnail ? 1u : 0u);
+				(void)root.SetDWORDValue(REG_USE_DESIRED_SIZE_HINT, useDesiredSizeHint ? 1u : 0u);
+
+				(void)root.SetDWORDValue(REG_MAX_FFMpeg_DIM, maxFFMpegDim);
+				(void)root.SetDWORDValue(REG_MAX_FFMpeg_BYTES, maxFFMpegBytes);
+
+				(void)root.SetDWORDValue(REG_COLLAGE_ENABLE, collage4 ? 1u : 0u);
+				(void)root.SetDWORDValue(REG_COLLAGE_MIN_SECONDS, collageMinSeconds);
+
+				CRegKeyHelper<> sub;
+				if (sub.Create(root, REG_THUMB_SUBKEY) == ERROR_SUCCESS)
+				{
+					(void)sub.SetDWORDValue(REG_THUMB_ENABLED, thumbEnabled ? 1u : 0u);
+					(void)sub.SetStringValue(REG_THUMB_PATH, thumbPath.c_str());
+					(void)sub.SetStringValue(REG_THUMB_PARAMS, thumbParams.c_str());
+				}
 			}
-		} config; 
+		} config;
 
-		explicit CFFMpegPluginMysticThumbs(_In_ IMysticThumbsPluginContext* context)
+		static INT_PTR CALLBACK ConfigureDialogProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+
+public:
+		explicit CFFMpegPlugin(_In_ IMysticThumbsPluginContext* context)
 			: m_context(context), config(this)
 		{
 			m_log = context->Log();
@@ -293,7 +280,7 @@ namespace ffmpegthumb {
 		{
 			return ARRAYSIZE(s_extensions);
 		}
-
+		 
 		virtual LPCWSTR GetExtension(_In_ unsigned int index) const		override
 		{
 			if (index >= ARRAYSIZE(s_extensions))
@@ -303,34 +290,23 @@ namespace ffmpegthumb {
 
 		virtual void Destroy() override
 		{
-			this->~CFFMpegPluginMysticThumbs();
+			this->~CFFMpegPlugin();
 			CoTaskMemFree(this);
 		}
 
 		virtual bool Ping(_Inout_ MysticThumbsPluginPing& ping) override
 		{
 
-			config.Load();
-			BindLogConfig(&config.log); 
-			ClearLogContext();
+			config.Load();			
 
-			static std::once_flag s_dumpOnce;
-			std::call_once(s_dumpOnce, [&] { config.DumpToLog(g_hModule); });
+			const unsigned int pingSizeHint = (ping.requestedWidth && ping.requestedHeight) ? std::max(1u, std::min(ping.requestedWidth, ping.requestedHeight)) : 0u;
+			m_logTag.UpdateFromStream(m_context ? m_context->GetStream() : nullptr, pingSizeHint);
 
 			IStream* pStream = m_context ? m_context->GetStream() : nullptr;
-			if (pStream) {
-				// Best-effort log tagging by stream name (STATSTG::pwcsName).
-				TryAdoptStreamNameForLogContext(pStream);
+			if (!pStream)
+				if (m_log) m_log->logf(L"%sPing: context stream is null", m_logTag.Tag());
 
-				LogContext& c = GetLogContext();
-				if (c.valid) {
-					LogMessageF(L"Ping: Stream name=\"%s\", CRC32=%08X", c.name.c_str(), c.crc32);
-				}
-			}
-			else
-			{
-				LogMessage(L"Ping: context stream is null");
-			}
+			if (m_log) m_log->logf(L"%sPing (FFMpeg): File \"%s\"", m_logTag.Tag(), m_logTag.Name());
 
 			// Probe real media dimensions (preferred in V4) without generating a thumbnail.
 			unsigned int w = 0, h = 0;
@@ -352,7 +328,7 @@ namespace ffmpegthumb {
 				wroteTemp = WriteStreamToFile(pStream, mediaPath);
 				if (!wroteTemp)
 				{
-					LogMessage(L"Ping: WriteStreamToFile failed");
+					if (m_log) m_log->logf(L"%sPing: WriteStreamToFile failed", m_logTag.Tag());
 				}
 			}
 
@@ -426,10 +402,10 @@ namespace ffmpegthumb {
 
 		bool Configure(_In_ HWND hWndParent) override
 		{
-			INT_PTR result = DialogBoxParamW(ffmpegthumb::g_hModule,
+			INT_PTR result = DialogBoxParamW(g_hModule,
 				MAKEINTRESOURCE(IDD_FFMPEG_PLUGIN_CONFIGURE),
 				hWndParent,
-				FFMpegConfigureDialogProc,
+				ConfigureDialogProc,
 				(LPARAM)this);
 
 			return result == IDOK;
@@ -845,20 +821,19 @@ namespace ffmpegthumb {
 			if (!lplpOutputImage) return E_POINTER;
 			*lplpOutputImage = nullptr;
 
-			config.Load();
-			BindLogConfig(&config.log);
-			ClearLogContext();
-			SetLogContextCall(params.desiredWidth);
+			IStream* pStream = m_context ? m_context->GetStream() : nullptr;
+			if (!pStream) return E_FAIL;
 
+			config.context = m_context;
+			config.Load();
 			const unsigned int desiredSize = std::max(1u, std::min(params.desiredWidth, params.desiredHeight));
+
+			if (m_log) m_log->logf(L"%sGenerate: start: %ux%u", m_logTag.Tag(), (unsigned)params.desiredWidth, (unsigned)params.desiredHeight);
 
 			bool hasAlpha = false;
 			unsigned int w = 0, h = 0;
 
 			// Reuse your existing pipeline, which returns LocalAlloc RGBA.
-			LogMessage(L"Generate: chaining GenerateImage");
-			IStream* pStream = m_context ? m_context->GetStream() : nullptr;
-
 			unsigned char* rgba = GenerateImage(
 				pStream,
 				desiredSize,
@@ -871,7 +846,7 @@ namespace ffmpegthumb {
 				return E_FAIL;
 
 			// Wrap raw RGBA into an IWICBitmap
-			ComPtr<IWICImagingFactory> factory;
+			CComPtr<IWICImagingFactory> factory;
 			HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
 				IID_PPV_ARGS(&factory));
 			if (FAILED(hr) || !factory)
@@ -883,7 +858,7 @@ namespace ffmpegthumb {
 			const UINT stride = (UINT)(w * 4);
 			const UINT bufSize = (UINT)(stride * h);
 
-			ComPtr<IWICBitmap> bmp;
+			CComPtr<IWICBitmap> bmp;
 			hr = factory->CreateBitmapFromMemory(
 				w, h,
 				GUID_WICPixelFormat32bppRGBA,
@@ -900,7 +875,7 @@ namespace ffmpegthumb {
 
 			if (SUCCEEDED(hr) && bmp)
 			{
-				ComPtr<IWICBitmap> owned;
+				CComPtr<IWICBitmap> owned;
 				hr = factory->CreateBitmap(
 					w,
 					h,
@@ -916,7 +891,7 @@ namespace ffmpegthumb {
 
 				WICRect rc{ 0, 0, (INT)w, (INT)h };
 
-				ComPtr<IWICBitmapLock> lock;
+				CComPtr<IWICBitmapLock> lock;
 				hr = owned->Lock(&rc, WICBitmapLockWrite, &lock);
 				if (FAILED(hr) || !lock)
 				{
@@ -1216,7 +1191,7 @@ namespace ffmpegthumb {
 			std::string pathUtf8 = WideToUtf8(mediaPath);
 			if (pathUtf8.empty())
 			{
-				LogMessage(L"RenderWithFFmpegFromFile: WideToUtf8 failed");
+				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: WideToUtf8 failed", m_logTag.Tag());
 				av_dict_free(&opts);
 				return nullptr;
 			}
@@ -1226,14 +1201,14 @@ namespace ffmpegthumb {
 			av_dict_free(&opts);
 			if (rc < 0 || !fmt)
 			{
-				LogMessage(L"RenderWithFFmpegFromFile: avformat_open_input failed");
+				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: avformat_open_input failed", m_logTag.Tag());
 				return nullptr;
 			}
 
 			rc = avformat_find_stream_info(fmt, nullptr);
 			if (rc < 0)
 			{
-				LogMessage(L"RenderWithFFmpegFromFile: avformat_find_stream_info failed");
+				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: avformat_find_stream_info failed", m_logTag.Tag());
 				avformat_close_input(&fmt);
 				return nullptr;
 			}
@@ -1242,7 +1217,7 @@ namespace ffmpegthumb {
 			const int vIndex = av_find_best_stream(fmt, AVMEDIA_TYPE_VIDEO, -1, -1, &dec, 0);
 			if (vIndex < 0 || !dec)
 			{
-				LogMessage(L"RenderWithFFmpegFromFile: no video stream (audio-only not supported yet)");
+				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: no video stream (audio-only not supported yet", m_logTag.Tag());
 				avformat_close_input(&fmt);
 				return nullptr;
 			}
@@ -1250,7 +1225,7 @@ namespace ffmpegthumb {
 			AVCodecContext* cc = avcodec_alloc_context3(dec);
 			if (!cc)
 			{
-				LogMessage(L"RenderWithFFmpegFromFile: avcodec_alloc_context3 failed");
+				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: avcodec_alloc_context3 failed", m_logTag.Tag());
 				avformat_close_input(&fmt);
 				return nullptr;
 			}
@@ -1258,7 +1233,7 @@ namespace ffmpegthumb {
 			rc = avcodec_parameters_to_context(cc, fmt->streams[vIndex]->codecpar);
 			if (rc < 0)
 			{
-				LogMessage(L"RenderWithFFmpegFromFile: avcodec_parameters_to_context failed");
+				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: avcodec_parameters_to_context failed", m_logTag.Tag());
 				avcodec_free_context(&cc);
 				avformat_close_input(&fmt);
 				return nullptr;
@@ -1271,21 +1246,20 @@ namespace ffmpegthumb {
 			rc = avcodec_open2(cc, dec, nullptr);
 			if (rc < 0)
 			{
-				LogMessage(L"RenderWithFFmpegFromFile: avcodec_open2 failed");
+				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: avcodec_open2 failed", m_logTag.Tag());
 				avcodec_free_context(&cc);
 				avformat_close_input(&fmt);
 				return nullptr;
 			}
 
 			// Report decoder info
-			LogMessageF(L"Opened decoder: %S", dec->name);
-			LogMessageF(L"Decoder long name: %S",
-				dec->long_name ? dec->long_name : "(null)");
-			LogMessageF(L"Decoder pix_fmts: %p", dec->pix_fmts);
+			if (m_log) m_log->logf(L"%sOpened decoder: %S", m_logTag.Tag(), dec->name);
+			if (m_log) m_log->logf(L"%sDecoder long name: %S", m_logTag.Tag(), dec->long_name ? dec->long_name : "(null)");
+			if (m_log) m_log->logf(L"%sDecoder pix_fmts: %p", m_logTag.Tag(), dec->pix_fmts);
 
 			// Once per process is enough, but here is OK for now
-			LogMessageF(L"FFmpeg version: %S", av_version_info());
-			LogMessageF(L"FFmpeg config: %S", avcodec_configuration());
+			if (m_log) m_log->logf(L"%sFFmpeg version: %S", m_logTag.Tag(), av_version_info());
+			if (m_log) m_log->logf(L"%sFFmpeg config: %S", m_logTag.Tag(), avcodec_configuration());
 
 			// Decode a representative frame by trying a few timestamps.
 			// If the decoded frame looks blank/near-black, try another timestamp.
@@ -1293,7 +1267,7 @@ namespace ffmpegthumb {
 			AVFrame* frame = av_frame_alloc();
 			if (!pkt || !frame)
 			{
-				LogMessage(L"RenderWithFFmpegFromFile: av_packet_alloc/av_frame_alloc failed");
+				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: av_packet_alloc/av_frame_alloc failed", m_logTag.Tag());
 				av_packet_free(&pkt);
 				av_frame_free(&frame);
 				avcodec_free_context(&cc);
@@ -1349,7 +1323,7 @@ namespace ffmpegthumb {
 					av_frame_free(&dstProbe);
 
 					bool blank = LooksBlankOrNearBlackRGBA(probe.data(), probeW, probeH);
-					if (blank) LogMessage(L"ProbeLooksBlank: rejected frame");
+					if (blank) if (m_log) m_log->logf(L"%sProbeLooksBlank: rejected frame", m_logTag.Tag());
 					return blank;
 				};
 
@@ -1496,12 +1470,11 @@ namespace ffmpegthumb {
 
 			if (!gotFrame)
 			{
-				std::wstringstream ss;
-				ss << L"Decode failed. codec=" << dec->name
-					<< L" pix_fmt=" << (frame ? frame->format : -1);
-				LogMessage(ss.str());
-
-				LogMessage(L"RenderWithFFmpegFromFile: failed to decode a frame");
+				if (m_log) m_log->logf(
+					L"%sRenderWithFFmpegFromFile: codec=%S, pix_fmt=%d, failed to decode a frame",
+					m_logTag.Tag(),
+					dec->name,
+					(frame ? frame->format : -1));
 				av_packet_free(&pkt);
 				av_frame_free(&frame);
 				avcodec_free_context(&cc);
@@ -1513,7 +1486,7 @@ namespace ffmpegthumb {
 			const unsigned int srcH = (unsigned int)frame->height;
 			if (srcW == 0 || srcH == 0)
 			{
-				LogMessage(L"RenderWithFFmpegFromFile: decoded frame has invalid dimensions");
+				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: decoded frame has invalid dimensions", m_logTag.Tag());
 				av_packet_free(&pkt);
 				av_frame_free(&frame);
 				avcodec_free_context(&cc);
@@ -1551,7 +1524,7 @@ namespace ffmpegthumb {
 			const size_t h = (size_t)dstH;
 			if (w == 0 || h == 0)
 			{
-				LogMessage(L"RenderWithFFmpegFromFile: invalid output size");
+				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: invalid output size", m_logTag.Tag());
 				av_packet_free(&pkt);
 				av_frame_free(&frame);
 				avcodec_free_context(&cc);
@@ -1560,7 +1533,7 @@ namespace ffmpegthumb {
 			}
 			if (w > (SIZE_MAX / 4) || (w * 4) > (SIZE_MAX / h))
 			{
-				LogMessage(L"RenderWithFFmpegFromFile: size overflow");
+				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: size overflow", m_logTag.Tag());
 				av_packet_free(&pkt);
 				av_frame_free(&frame);
 				avcodec_free_context(&cc);
@@ -1570,11 +1543,7 @@ namespace ffmpegthumb {
 			const size_t bufSize = (w * 4) * h;
 			if (bufSize > maxBytes)
 			{
-				std::wstringstream ss;
-				ss << L"RenderWithFFmpegFromFile: refusing allocation bufSize=" << (unsigned long long)bufSize
-					<< L" > maxBytes=" << (unsigned long long)maxBytes
-					<< L" (out=" << dstW << L"x" << dstH << L")";
-				LogMessage(ss.str());
+				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: refusing allocation bufSize=%lld, maxBytes=%lld ((out=%ldx%ld)", m_logTag.Tag(), (unsigned long long)bufSize, (unsigned long long)maxBytes, dstW, dstH);
 				av_packet_free(&pkt);
 				av_frame_free(&frame);
 				avcodec_free_context(&cc);
@@ -1585,7 +1554,7 @@ namespace ffmpegthumb {
 			unsigned char* out = (unsigned char*)LocalAlloc(LMEM_FIXED, bufSize);
 			if (!out)
 			{
-				LogMessage(L"RenderWithFFmpegFromFile: LocalAlloc failed");
+				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: LocalAlloc failed", m_logTag.Tag());
 				av_packet_free(&pkt);
 				av_frame_free(&frame);
 				avcodec_free_context(&cc);
@@ -1601,7 +1570,7 @@ namespace ffmpegthumb {
 
 			if (!sws)
 			{
-				LogMessage(L"RenderWithFFmpegFromFile: sws_getContext failed");
+				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: sws_getContext failed", m_logTag.Tag());
 				LocalFree(out);
 				av_packet_free(&pkt);
 				av_frame_free(&frame);
@@ -1613,7 +1582,7 @@ namespace ffmpegthumb {
 			AVFrame* dst = av_frame_alloc();
 			if (!dst)
 			{
-				LogMessage(L"RenderWithFFmpegFromFile: av_frame_alloc(dst) failed");
+				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: av_frame_alloc failed", m_logTag.Tag());
 				sws_freeContext(sws);
 				LocalFree(out);
 				av_packet_free(&pkt);
@@ -1645,7 +1614,7 @@ namespace ffmpegthumb {
 			width = dstW;
 			height = dstH;
 
-			LogMessageF(L"RenderWithFFmpegFromFile: success, out=%dx%d", width, height);
+			if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: success, out=%dx%d", m_logTag.Tag(), width, height);
 
 			return out;
 		}
@@ -1659,23 +1628,10 @@ namespace ffmpegthumb {
 			OUT unsigned int& width,
 			OUT unsigned int& height)
 		{
-			// Update per-thread call context (size + sequence). If Ping did not run on this thread,
-			// we still try to adopt a stream name for CRC tagging.
-			SetLogContextCall(desiredSize);
-			if (!GetLogContext().valid)
-			{
-				if (TryAdoptStreamNameForLogContext(pStream))
-				{
-					std::wstringstream ss;
-					ss << L"GenerateImage: adopted stream name=\"" << GetLogContext().name
-						<< L"\", CRC32=0x" << std::hex << std::uppercase << GetLogContext().crc32;
-					LogMessage(ss.str());
-				}
-			}
 
 			if (config.returnDebugFFMpegThumbnail)
 			{
-				LogMessage(L"GenerateImage: returning synthetic FFMpeg debug image");
+				if (m_log) m_log->logf(L"%sGenerateImage: returning synthetic FFMpeg debug image", m_logTag.Tag());
 				return MakeDebugImage(desiredSize, hasAlpha, width, height);
 			}
 
@@ -1688,20 +1644,18 @@ namespace ffmpegthumb {
 			std::wstring mediaPath, pngPath;
 			if (!MakeTempFilePair(tempDir, L".tmpvid", mediaPath, pngPath))
 			{
-				LogMessage(L"GenerateImage: MakeTempFilePair failed");
+				if (m_log) m_log->logf(L"%sGenerateImage: MakeTempFilePair failed", m_logTag.Tag());
 				return nullptr;
 			}
 
 			{
-				std::wstringstream ss;
-				ss << L"GenerateImage: Generated files=" << mediaPath << L" and .png";
-				LogMessage(ss.str());
+				if (m_log) m_log->logf(L"%sGenerateImage: Generated files=%s and .png", m_logTag.Tag(), mediaPath.c_str());
 			}
 
 			// Stage 1: stream -> temp media file (FFmpeg reads from a local file)
 			if (!WriteStreamToFile(pStream, mediaPath))
 			{
-				LogMessage(L"GenerateImage: WriteStreamToFile failed");
+				if (m_log) m_log->logf(L"%sGenerateImage: WriteStreamToFile failed", m_logTag.Tag());
 				if (!config.leaveTempFiles)
 				{
 					DeleteFileW(mediaPath.c_str());
@@ -1745,7 +1699,7 @@ namespace ffmpegthumb {
 
 			if (buffer)
 			{
-				LogMessage(L"GenerateImage: FFmpeg decode succeeded");
+				if (m_log) m_log->logf(L"%sGenerateImage: FFmpeg decode succeeded", m_logTag.Tag());
 				if (!config.leaveTempFiles)
 				{
 					DeleteFileW(mediaPath.c_str());
@@ -1754,38 +1708,36 @@ namespace ffmpegthumb {
 				return buffer;
 			}
 
-			LogMessage(L"GenerateImage: FFmpeg decode failed, trying external Thumbnailer");
+			if (m_log) m_log->logf(L"%sGenerateImage: FFmpeg decode failed, trying external Thumbnailer", m_logTag.Tag());
 
 			// Stage 4: external thumbnailer fallback -> PNG
 			if (!config.thumbPath.empty() && !config.thumbParams.empty())
 			{
 				std::wstring args = ExpandThumbParams(config.thumbParams, mediaPath, pngPath, desiredSize, tempDir);
 
-				{
-					std::wstringstream ss;
-					ss << L"Thumbnailer: \"" << config.thumbPath << L"\" " << args;
-					LogMessage(ss.str());
-				}
+				if (m_log) m_log->logf(
+					L"%sThumbnailer: \"%s\" args=%s",
+					m_logTag.Tag(),
+					config.thumbPath.c_str(),
+					args.c_str());
 
 				std::wstring captured;
 				DWORD ec = 0;
 				if (RunExternalThumbnailerCapture(config.thumbPath, args, captured, ec))
 				{
-					std::wstringstream s2;
-					s2 << L"Thumbnailer: exit code " << ec;
-					LogMessage(s2.str());
+					if (m_log) m_log->logf(L"%sThumbnailer: exit code %ld", m_logTag.Tag(), ec);
 
 					if (!captured.empty())
-						LogMessage(L"Thumbnailer output: " + captured);
+						if (m_log) m_log->logf(L"%sThumbnailer output: %s", m_logTag.Tag(), captured.c_str());
 				}
 				else
 				{
-					LogMessage(L"Thumbnailer: failed to launch or capture output");
+					if (m_log) m_log->logf(L"%sThumbnailer: failed to launch or capture output", m_logTag.Tag());
 				}
 			}
 			else
 			{
-				LogMessage(L"GenerateImage: no Thumbnailer configured (Settings\\Thumbnailer)");
+				if (m_log) m_log->logf(L"%sGenerateImage: no Thumbnailer configured", m_logTag.Tag());
 			}
 
 			// Stage 5: load PNG if produced
@@ -1794,7 +1746,7 @@ namespace ffmpegthumb {
 				buffer = LoadPngToRgbaBuffer(pngPath, desiredSize, config.useDesiredSizeHint, hasAlpha, width, height);
 				if (buffer)
 				{
-					LogMessage(L"GenerateImage: success (external thumbnailer)");
+					if (m_log) m_log->logf(L"%sGenerateImage: success (external thumbnailer", m_logTag.Tag());
 					if (!config.leaveTempFiles)
 					{
 						DeleteFileW(mediaPath.c_str());
@@ -1803,11 +1755,11 @@ namespace ffmpegthumb {
 					return buffer;
 				}
 
-				LogMessage(L"GenerateImage: PNG existed but LoadPngToRgbaBuffer failed");
+				if (m_log) m_log->logf(L"%sGenerateImage: PNG existed but LoadPngToRgbaBuffer failed", m_logTag.Tag());
 			}
 			else
 			{
-				LogMessage(L"GenerateImage: external thumbnailer did not produce PNG");
+				if (m_log) m_log->logf(L"%sGenerateImage: external thumbnailer did not produce PNG", m_logTag.Tag());
 			}
 
 			if (!config.leaveTempFiles)
@@ -1820,170 +1772,69 @@ namespace ffmpegthumb {
 		}
 	};
 
-
-
-	void LogFFmpegError(const wchar_t* where, int err)
+	INT_PTR CALLBACK CFFMpegPlugin::ConfigureDialogProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	{
-		char errbuf[256];
-		errbuf[0] = 0;
-		av_strerror(err, errbuf, sizeof(errbuf));
-
-		LogMessageF(L"%s: %S (%d)", where, errbuf, err);
-	}
-
-	// ------------------------------------------------------------------------
-	// Configure dialog helpers (must be after CSVGPluginMysticThumbs definition)
-	// ------------------------------------------------------------------------
-
-	static void ApplyDialogToConfig(HWND hDlg,
-		const ffmpegthumb::CFFMpegPluginMysticThumbs::PluginConfig& oldCfg,
-		ffmpegthumb::CFFMpegPluginMysticThumbs::PluginConfig& newCfg)
-	{
-		newCfg = oldCfg;
-
-		// Logging
-		newCfg.log.enabled = GetCheck(hDlg, IDC_CFG_LOG_ENABLED);
-		newCfg.log.includeCRC = GetCheck(hDlg, IDC_CFG_LOG_INCLUDE_CRC);
-		newCfg.log.fileName = GetText(hDlg, IDC_CFG_LOG_FILENAME);
-
-		// Main
-		newCfg.leaveTempFiles = GetCheck(hDlg, IDC_CFG_MISC_LEAVE_TEMP);
-		newCfg.swapRB = GetCheck(hDlg, IDC_CFG_MISC_SWAP_RB);
-		newCfg.returnDebugFFMpegThumbnail = GetCheck(hDlg, IDC_CFG_MISC_RETURN_DEBUG);
-		newCfg.useDesiredSizeHint = GetCheck(hDlg, IDC_CFG_MISC_USE_DESIRED_SIZE_HINT);
-
-		newCfg.maxFFMpegDim = GetUInt(hDlg, IDC_CFG_LIMIT_MAX_DIM, oldCfg.maxFFMpegDim);
-		newCfg.maxFFMpegBytes = GetUInt(hDlg, IDC_CFG_LIMIT_MAX_BYTES, oldCfg.maxFFMpegBytes);
-
-		// External thumb
-//		newCfg.thumbEnabled = GetCheck(hDlg, IDC_CFG_THUMB_ENABLE);
-		newCfg.thumbPath = GetText(hDlg, IDC_CFG_THUMB_PATH);
-		newCfg.thumbParams = GetText(hDlg, IDC_CFG_THUMB_PARAMS);
-
-		// Collage
-		newCfg.collage4 = GetCheck(hDlg, IDC_CFG_COLLAGE_ENABLE);
-		newCfg.collageMinSeconds = GetUInt(hDlg, IDC_CFG_COLLAGE_MIN_SECONDS, oldCfg.collageMinSeconds);
-	}
-
-	static bool ConfigDifferent(const ffmpegthumb::CFFMpegPluginMysticThumbs::PluginConfig& a,
-		const ffmpegthumb::CFFMpegPluginMysticThumbs::PluginConfig& b)
-	{
-		return
-			a.log.enabled != b.log.enabled ||
-			a.log.includeCRC != b.log.includeCRC ||
-			a.log.fileName != b.log.fileName ||
-
-			a.leaveTempFiles != b.leaveTempFiles ||
-			a.swapRB != b.swapRB ||
-			a.returnDebugFFMpegThumbnail != b.returnDebugFFMpegThumbnail ||
-			a.useDesiredSizeHint != b.useDesiredSizeHint ||
-			a.maxFFMpegDim != b.maxFFMpegDim ||
-			a.maxFFMpegBytes != b.maxFFMpegBytes ||
-
-			a.thumbEnabled != b.thumbEnabled ||
-			a.thumbPath != b.thumbPath ||
-			a.thumbParams != b.thumbParams ||
-
-			a.collage4 != b.collage4 ||
-			a.collageMinSeconds != b.collageMinSeconds;
-	}
-
-	struct FFMpegCfgDlgState
-	{
-		ffmpegthumb::CFFMpegPluginMysticThumbs* plugin = nullptr;
-		ffmpegthumb::CFFMpegPluginMysticThumbs::PluginConfig cfgAtOpen;
-	};
-
-	static INT_PTR CALLBACK FFMpegConfigureDialogProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
-	{
-		switch (msg)
+		switch (uMsg) 
 		{
 		case WM_INITDIALOG:
 		{
-			auto* plugin = reinterpret_cast<CFFMpegPluginMysticThumbs*>(lParam);
-			if (!plugin)
-				return FALSE;
-			auto* st = new FFMpegCfgDlgState{};
-			st->plugin = plugin;
+			CFFMpegPlugin* plugin = (CFFMpegPlugin*)lParam;
+			SetWindowLongPtrW(hwndDlg, GWLP_USERDATA, (LONG_PTR)plugin);
 
+			plugin->config.context = plugin->m_context;
 			plugin->config.Load();
-			st->cfgAtOpen = plugin->config;
 
-			// Stash state for the lifetime of the dialog
-			SetWindowLongPtrW(hDlg, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(st));
+			const auto& c = plugin->config;
 
-			const auto& c = st->cfgAtOpen;
+			SetCheck(hwndDlg, IDC_CFG_MISC_LEAVE_TEMP, c.leaveTempFiles);
+			SetCheck(hwndDlg, IDC_CFG_MISC_SWAP_RB, c.swapRB);
+			SetCheck(hwndDlg, IDC_CFG_MISC_RETURN_DEBUG, c.returnDebugFFMpegThumbnail);
+			SetCheck(hwndDlg, IDC_CFG_MISC_USE_DESIRED_SIZE_HINT, c.useDesiredSizeHint);
 
-			SetCheck(hDlg, IDC_CFG_LOG_ENABLED, c.log.enabled);
-			SetCheck(hDlg, IDC_CFG_LOG_INCLUDE_CRC, c.log.includeCRC);
-			SetText(hDlg, IDC_CFG_LOG_FILENAME, c.log.fileName);
+			SetUInt(hwndDlg, IDC_CFG_LIMIT_MAX_DIM, c.maxFFMpegDim);
+			SetUInt(hwndDlg, IDC_CFG_LIMIT_MAX_BYTES, c.maxFFMpegBytes);
 
-			SetCheck(hDlg, IDC_CFG_MISC_LEAVE_TEMP, c.leaveTempFiles);
-			SetCheck(hDlg, IDC_CFG_MISC_SWAP_RB, c.swapRB);
-			SetCheck(hDlg, IDC_CFG_MISC_RETURN_DEBUG, c.returnDebugFFMpegThumbnail);
-			SetCheck(hDlg, IDC_CFG_MISC_USE_DESIRED_SIZE_HINT, c.useDesiredSizeHint);
+			SetText(hwndDlg, IDC_CFG_THUMB_PATH, c.thumbPath);
+			SetText(hwndDlg, IDC_CFG_THUMB_PARAMS, c.thumbParams);
 
-			SetUInt(hDlg, IDC_CFG_LIMIT_MAX_DIM, c.maxFFMpegDim);
-			SetUInt(hDlg, IDC_CFG_LIMIT_MAX_BYTES, c.maxFFMpegBytes);
-
-			SetText(hDlg, IDC_CFG_THUMB_PATH, c.thumbPath);
-			SetText(hDlg, IDC_CFG_THUMB_PARAMS, c.thumbParams);
-
-			SetCheck(hDlg, IDC_CFG_COLLAGE_ENABLE, c.collage4);
-			SetUInt(hDlg, IDC_CFG_COLLAGE_MIN_SECONDS, c.collageMinSeconds);
+			SetCheck(hwndDlg, IDC_CFG_COLLAGE_ENABLE, c.collage4);
+			SetUInt(hwndDlg, IDC_CFG_COLLAGE_MIN_SECONDS, c.collageMinSeconds);
 
 			// Tooltips
 			HWND hTip = CreateWindowExW(0, TOOLTIPS_CLASSW, nullptr,
 				WS_POPUP | TTS_ALWAYSTIP | TTS_BALLOON,
 				CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-				hDlg, nullptr, g_hModule, nullptr);
+				hwndDlg, nullptr, g_hModule, nullptr);
 			if (hTip)
 			{
 				SendMessageW(hTip, TTM_SETMAXTIPWIDTH, 0, 420);
 
-				AddTooltip(hTip, hDlg, IDC_CFG_LOG_ENABLED, L"Enable verbose logging to the log file. Should only be enabled for debugging.");
-				AddTooltip(hTip, hDlg, IDC_CFG_LOG_FILENAME, L"Full path to the log file (folder + filename).");
-				AddTooltip(hTip, hDlg, IDC_CFG_LOG_BROWSE, L"Pick a folder and a filename for the log file.");
-				AddTooltip(hTip, hDlg, IDC_CFG_LOG_INCLUDE_CRC, L"Include CRC/hash info in log entries (useful for debugging).");
 
-				AddTooltip(hTip, hDlg, IDC_CFG_MISC_LEAVE_TEMP, L"Keep temporary extracted/converted files. Useful when debugging. Be aware that this can consume significant disk space.");
-				AddTooltip(hTip, hDlg, IDC_CFG_MISC_SWAP_RB, L"Swap R/B channels (RGBA <-> BGRA) for Windows compatibility.");
-				AddTooltip(hTip, hDlg, IDC_CFG_MISC_RETURN_DEBUG, L"Return a debug thumbnail when rendering fails. Useful for debugging");
-				AddTooltip(hTip, hDlg, IDC_CFG_MISC_USE_DESIRED_SIZE_HINT, L"Let MysticThumbs desired size hint influence render scale.");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_MISC_LEAVE_TEMP, L"Keep temporary extracted/converted files. Useful when debugging. Be aware that this can consume significant disk space.");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_MISC_SWAP_RB, L"Swap R/B channels (RGBA <-> BGRA) for Windows compatibility.");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_MISC_RETURN_DEBUG, L"Return a debug thumbnail when rendering fails. Useful for debugging");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_MISC_USE_DESIRED_SIZE_HINT, L"Let MysticThumbs desired size hint influence render scale.");
 
-				AddTooltip(hTip, hDlg, IDC_CFG_LIMIT_MAX_DIM, L"Reject SVGs with width/height larger than this (safety/DoS protection).");
-				AddTooltip(hTip, hDlg, IDC_CFG_LIMIT_MAX_BYTES, L"Reject SVGs larger than this many bytes (safety/DoS protection).");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_LIMIT_MAX_DIM, L"Reject media files with width/height larger than this (safety/DoS protection).");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_LIMIT_MAX_BYTES, L"Reject media files larger than this many bytes (safety/DoS protection).");
 
-				//				AddTooltip(hTip, hDlg, IDC_CFG_THUMB_ENABLE, L"Enable external thumbnailer (\"tool that can create thumbnails\") in case internal rendering fails.");
-				AddTooltip(hTip, hDlg, IDC_CFG_THUMB_PATH, L"Optional external fallback thumbnailer executable path.");
-				AddTooltip(hTip, hDlg, IDC_CFG_THUMB_BROWSE, L"Pick an external thumbnailer executable.");
-				AddTooltip(hTip, hDlg, IDC_CFG_THUMB_PARAMS, L"Command-line parameters for the external thumbnailer.");
+				//				AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_ENABLE, L"Enable external thumbnailer (\"tool that can create thumbnails\") in case internal rendering fails.");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_PATH, L"Optional external fallback thumbnailer executable path.");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_BROWSE, L"Pick an external thumbnailer executable.");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_PARAMS, L"Command-line parameters for the external thumbnailer.");
 
-				AddTooltip(hTip, hDlg, IDC_CFG_COLLAGE_ENABLE, L"Render thumbnail with 4 snapshots instead of one");
-				AddTooltip(hTip, hDlg, IDC_CFG_COLLAGE_MIN_SECONDS, L"Minimum length of video before attempting to create collage");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_COLLAGE_ENABLE, L"Render thumbnail with 4 snapshots instead of one");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_COLLAGE_MIN_SECONDS, L"Minimum length of video before attempting to create collage");
 			}
 
 
 			return TRUE;
 		}
 
-		case WM_NCDESTROY:
-		{
-			auto* st = reinterpret_cast<FFMpegCfgDlgState*>(
-				GetWindowLongPtrW(hDlg, GWLP_USERDATA));
-
-			if (st)
-			{
-				delete st;
-				SetWindowLongPtrW(hDlg, GWLP_USERDATA, 0);
-			}
-
-			break;
-		}
-
 		case WM_COMMAND:
 		{
-			CFFMpegPluginMysticThumbs* plugin = (CFFMpegPluginMysticThumbs*)GetWindowLongPtrW(hDlg, GWLP_USERDATA);
+			CFFMpegPlugin* plugin = (CFFMpegPlugin*)GetWindowLongPtrW(hwndDlg, GWLP_USERDATA);
+			ATLASSERT(plugin);
 
 			int wNotifyCode = HIWORD(wParam);
 			int wID = LOWORD(wParam);
@@ -1991,49 +1842,28 @@ namespace ffmpegthumb {
 			switch (wID)
 			{
 			case IDOK:
-			{
-				// Any changes? Save!
-				auto* st = reinterpret_cast<FFMpegCfgDlgState*>(GetWindowLongPtrW(hDlg, GWLP_USERDATA));
-				if (!st || !st->plugin)
-				{
-					EndDialog(hDlg, IDCANCEL);
+				if (wNotifyCode == BN_CLICKED) {
+					// Save the current configuration to the registry
+					plugin->config.Save(hwndDlg);
+					EndDialog(hwndDlg, IDOK);
 					return TRUE;
 				}
-
-				CFFMpegPluginMysticThumbs::PluginConfig newCfg = st->cfgAtOpen;
-				ApplyDialogToConfig(hDlg, st->cfgAtOpen, newCfg);
-
-				const bool changed = ConfigDifferent(st->cfgAtOpen, newCfg);
-				if (changed)
-				{
-					// Apply to plugin instance and save
-					st->plugin->config = newCfg;
-					st->plugin->config.Save();
-
-					MessageBoxW(
-						hDlg,
-						L"FFMpeg plugin settings saved to the registry.\r\n\r\n"
-						L"MysticThumbs/Explorer may need to be restarted before all new thumbnails use the updated settings.",
-						L"Voith's CODE FFMpeg Plugin",
-						MB_OK | MB_ICONINFORMATION);
-				}
-
-				EndDialog(hDlg, IDOK);
-				return TRUE;
-			}
-
+				break;
 			case IDCANCEL:
-				EndDialog(hDlg, IDCANCEL);
-				return TRUE;
+				if (wNotifyCode == BN_CLICKED) {
+					EndDialog(hwndDlg, IDCANCEL);
+					return TRUE;
+				}
+				break;
 			}
 			break;
 		}
 		}
 		return FALSE;
 	}
-	 
-	
-} // namespace ffmpegthumb
+
+
+
 
 // ----------------------------------------------------------------------------
 // DLL exports required by MysticThumbs
@@ -2059,19 +1889,24 @@ extern "C" FFMpegPLUGIN_API bool Shutdown()
 
 extern "C" FFMpegPLUGIN_API IMysticThumbsPlugin* CreateInstance(_In_ IMysticThumbsPluginContext* context)
 {
-	using namespace ffmpegthumb;
-
-	CFFMpegPluginMysticThumbs* plugin =
-		(CFFMpegPluginMysticThumbs*)CoTaskMemAlloc(sizeof(CFFMpegPluginMysticThumbs));
+	CFFMpegPlugin* plugin =
+		(CFFMpegPlugin*)CoTaskMemAlloc(sizeof(CFFMpegPlugin));
 
 	if (!plugin)
 	{
-		LogMessage(L"CreateInstance: CoTaskMemAlloc failed");
+		if (context && context->Log()) context->Log()->log(L"CreateInstance: CoTaskMemAlloc failed");
 		return nullptr;
 	}
 
-	new (plugin) CFFMpegPluginMysticThumbs(context);
+	new (plugin) CFFMpegPlugin(context);
 	return plugin;
+}
+
+extern "C" FFMpegPLUGIN_API bool PreventLoading([[maybe_unused]] bool isDebugProcess)
+{
+	// Return true to prevent MysticThumbs from loading this plugin.
+	//UNREFERENCED_PARAMETER(isDebugProcess);
+	return false;
 }
 
 // ----------------------------------------------------------------------------
@@ -2084,7 +1919,7 @@ FFMpegPLUGIN_API BOOL APIENTRY DllMain(HINSTANCE hInstance, DWORD reason, LPVOID
 	switch (reason)
 	{
 	case DLL_PROCESS_ATTACH:
-		ffmpegthumb::g_hModule = hInstance;
+		g_hModule = hInstance;
 		break;
 	}
 

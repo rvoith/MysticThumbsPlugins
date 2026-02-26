@@ -21,24 +21,11 @@
 #include <string>
 #include <vector>
 
-#include <mutex>
 #include <sstream>
 #include <iomanip>
 #include <cstdint>
 #include <algorithm>
 #include <type_traits>
-
-
-static const wchar_t* REG_LOG_ENABLED = L"Log";
-static const wchar_t* REG_LOG_INCLUDE_CRC = L"LogIncludeCRC";
-static const wchar_t* REG_LOG_FILENAME = L"LogFileName";
-
-// ----------------------------------------------------------------------------
-// Forward decls (so helpers can log without ordering issues)
-// ----------------------------------------------------------------------------
-struct LogConfigCommon;
-static inline void BindLogConfig(LogConfigCommon* cfg);
-static inline void LogMessage(const std::wstring& msg);
 
 // ----------------------------------------------------------------------------
 // Explicit link libraries
@@ -51,8 +38,9 @@ static inline void LogMessage(const std::wstring& msg);
 
 
 // ----------------------------------------------------------------------------
-// Ian's Simple Registry Helper (header-only)
+// Simple Registry Helper (header-only)
 // Add helper methods to CRegKey without modifying the original class
+// Idea and concept from MysticCoder, MysticCoder.net 
 // ----------------------------------------------------------------------------
 template <bool TCloseOnDestruct = true>
 class CRegKeyHelper final : public CRegKey
@@ -98,178 +86,6 @@ public:
     }
 };
 
-// ----------------------------------------------------------------------------
-// Simple Registry Helper (header-only)
-// ----------------------------------------------------------------------------
-class CSimpleRegistryHelper
-{
-public:
-	explicit CSimpleRegistryHelper(HKEY root = nullptr) : m_root(root) {}
-
-	void SetRoot(HKEY root) { m_root = root; }
-	HKEY  GetRoot() const { return m_root; }
-
-	bool HasDword(const wchar_t* subkey, const wchar_t* valueName, DWORD& out) const
-	{
-		out = 0;
-		if (!m_root || !valueName)
-			return false;
-
-		HKEY hKey = nullptr;
-		bool closeKey = false;
-
-		if (!subkey || subkey[0] == L'\0')
-		{
-			hKey = m_root;
-		}
-		else
-		{
-			if (RegOpenKeyExW(m_root, subkey, 0, KEY_READ, &hKey) != ERROR_SUCCESS)
-				return false;
-			closeKey = true;
-		}
-
-		DWORD type = 0;
-		DWORD cb = sizeof(DWORD);
-		DWORD val = 0;
-		LONG r = RegQueryValueExW(hKey, valueName, nullptr, &type, reinterpret_cast<LPBYTE>(&val), &cb);
-
-		if (closeKey)
-			RegCloseKey(hKey);
-
-		if (r != ERROR_SUCCESS || type != REG_DWORD)
-			return false;
-
-		out = val;
-		return true;
-	}
-
-	bool HasString(const wchar_t* subkey, const wchar_t* valueName, std::wstring& out) const
-	{
-		out.clear();
-		if (!m_root || !valueName)
-			return false;
-
-		HKEY hKey = nullptr;
-		bool closeKey = false;
-
-		if (!subkey || subkey[0] == L'\0')
-		{
-			hKey = m_root;
-		}
-		else
-		{
-			if (RegOpenKeyExW(m_root, subkey, 0, KEY_READ, &hKey) != ERROR_SUCCESS)
-				return false;
-			closeKey = true;
-		}
-
-		DWORD type = 0;
-		DWORD cb = 0;
-		LONG r = RegQueryValueExW(hKey, valueName, nullptr, &type, nullptr, &cb);
-		if (r != ERROR_SUCCESS || (type != REG_SZ && type != REG_EXPAND_SZ) || cb == 0)
-		{
-			if (closeKey) RegCloseKey(hKey);
-			return false;
-		}
-
-		std::vector<wchar_t> buf(cb / sizeof(wchar_t) + 2, 0);
-		r = RegQueryValueExW(hKey, valueName, nullptr, nullptr, reinterpret_cast<LPBYTE>(buf.data()), &cb);
-
-		if (closeKey)
-			RegCloseKey(hKey);
-
-		if (r != ERROR_SUCCESS)
-			return false;
-
-		out.assign(buf.data());
-		return true;
-	}
-
-	// Value-returning APIs with defaults (your requested behavior)
-	DWORD GetDword(const wchar_t* subkey, const wchar_t* valueName, DWORD defValue = 0L) const
-	{
-		DWORD v = 0;
-		return HasDword(subkey, valueName, v) ? v : defValue;
-	}
-
-	std::wstring GetString(const wchar_t* subkey, const wchar_t* valueName, const std::wstring& defValue = L"") const
-	{
-		std::wstring v;
-		return HasString(subkey, valueName, v) ? v : defValue;
-	}
-
-	bool SetDword(const wchar_t* subKey, const wchar_t* valueName, DWORD value) const
-	{
-		if (!m_root || !valueName)
-			return false;
-
-		HKEY hKey = nullptr;
-		bool closeKey = false;
-
-		if (!subKey || subKey[0] == L'\0')
-		{
-			hKey = m_root;
-		}
-		else
-		{
-			LONG r = RegCreateKeyExW(m_root, subKey, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &hKey, nullptr);
-			if (r != ERROR_SUCCESS)
-				return false;
-			closeKey = true;
-		}
-
-		LONG r = RegSetValueExW(hKey, valueName, 0, REG_DWORD,
-			reinterpret_cast<const BYTE*>(&value), sizeof(value));
-
-		if (closeKey)
-			RegCloseKey(hKey);
-
-		return r == ERROR_SUCCESS;
-	}
-
-	bool SetString(const wchar_t* subKey, const wchar_t* valueName, const std::wstring& value) const
-	{
-		if (!m_root || !valueName)
-			return false;
-
-		HKEY hKey = nullptr;
-		bool closeKey = false;
-
-		if (!subKey || subKey[0] == L'\0')
-		{
-			hKey = m_root;
-		}
-		else
-		{
-			LONG r = RegCreateKeyExW(m_root, subKey, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &hKey, nullptr);
-			if (r != ERROR_SUCCESS)
-				return false;
-			closeKey = true;
-		}
-
-		const DWORD cb = static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t));
-		LONG r = RegSetValueExW(hKey, valueName, 0, REG_SZ,
-			reinterpret_cast<const BYTE*>(value.c_str()), cb);
-
-		if (closeKey)
-			RegCloseKey(hKey);
-
-		return r == ERROR_SUCCESS;
-	}
-
-private:
-	HKEY m_root = nullptr;
-};
-
-
-
-
-static inline std::mutex& LogMutex()
-{
-	static std::mutex m;
-	return m;
-}
 
 static inline void AddTooltip(HWND hTip, HWND hDlg, int ctrlId, const wchar_t* text)
 {
@@ -497,7 +313,6 @@ static inline std::wstring GetTempDirectory(const std::wstring& path)
 
 	std::wstring base(buffer);
 
-	// Use a subdirectory for easier debugging / cleanup
 	std::wstring sub = base;
 	if (!sub.empty() && sub.back() != L'\\')
 		sub.push_back(L'\\');
@@ -510,7 +325,6 @@ static inline std::wstring GetTempDirectory(const std::wstring& path)
 
 static inline std::wstring GetText(HWND hDlg, int id)
 {
-	// use the heap / stl directly instead of nasty fixed length stack allocated buffers
 	std::wstring buf;
 	HWND item = ::GetDlgItem(hDlg, id);
 	if(!item) return buf;
@@ -519,7 +333,6 @@ static inline std::wstring GetText(HWND hDlg, int id)
 	return buf;
 }
 
-// Probably should be called GetIntT or something else
 template<typename T = DWORD>
 static inline T GetUInt(HWND hDlg, const int nIDDlgItem, const T defValue)
 {
@@ -555,8 +368,6 @@ static inline bool MakeTempFilePair(const std::wstring& tempDir, const std::wstr
 
 	return true;
 }
-
-
 
 static unsigned char* LoadPngToRgbaBuffer(const std::wstring& pngPath,
 	unsigned int desiredSize,
@@ -662,17 +473,6 @@ static unsigned char* LoadPngToRgbaBuffer(const std::wstring& pngPath,
 	width = w;
 	height = h;
 
-	{
-		std::wstringstream ss;
-		ss << L"LoadPngToRgbaBuffer: src=\""
-			<< pngPath
-			<< L"\" out=" << width << L"x" << height
-			<< L" desiredSize=" << desiredSize
-			<< L" useDesiredSizeHint=" << (useDesiredSizeHint ? 1 : 0);
-		LogMessage(ss.str());
-	}
-
-
 	const size_t stride = (size_t)width * 4;
 	const size_t bufSize = stride * (size_t)height;
 
@@ -704,194 +504,6 @@ static unsigned char* LoadPngToRgbaBuffer(const std::wstring& pngPath,
 	hasAlpha = true;
 	return buffer;
 }
-
-// ----------------------------------------------------------------------------
-// Common logging configuration & helpers
-// ----------------------------------------------------------------------------
-struct LogConfigCommon
-{
-    DWORD enabled = false;   // using DWORD instead of bool for registry convenience (0/1)
-	DWORD includeCRC = true; // ditto
-	std::wstring fileName;
-};
-
-struct LogContext
-{
-	bool         valid = false;
-	uint32_t     crc32 = 0;
-	unsigned int desiredSize = 0; // 0 = unknown/not set
-	uint32_t     callSeq = 0;     // per-thread sequence number
-	std::wstring name;
-};
-
-static inline LogConfigCommon*& BoundLogConfig()
-{
-	static thread_local LogConfigCommon* p = nullptr;
-	return p;
-}
-
-static inline void BindLogConfig(LogConfigCommon* pCfg)
-{
-	BoundLogConfig() = pCfg;
-}
-
-static inline LogContext& GetLogContext()
-{
-	static thread_local LogContext ctx;
-	return ctx;
-}
-
-static inline uint32_t& GetLogSeq()
-{
-	static thread_local uint32_t seq = 0;
-	return seq;
-}
-
-static inline void ClearLogContext()
-{
-	LogContext& c = GetLogContext();
-	c.valid = false;
-	c.crc32 = 0;
-	c.desiredSize = 0;
-	c.callSeq = 0;
-	c.name.clear();
-}
-
-static inline void SetLogContextName(const std::wstring& name)
-{
-	LogContext& c = GetLogContext();
-	c.name = name;
-	c.crc32 = Crc32OfWString(name);
-	c.valid = true;
-}
-
-static inline void SetLogContextCall(unsigned int desiredSize)
-{
-	LogContext& c = GetLogContext();
-	c.desiredSize = desiredSize;
-	c.callSeq = ++GetLogSeq();
-}
-
-static inline bool TryAdoptStreamNameForLogContext(IStream* pStream)
-{
-	if (!pStream)
-		return false;
-
-	STATSTG st{};
-	HRESULT hr = pStream->Stat(&st, STATFLAG_DEFAULT);
-	if (FAILED(hr) || !st.pwcsName)
-		return false;
-
-	std::wstring name = st.pwcsName;
-	CoTaskMemFree(st.pwcsName);
-
-	SetLogContextName(name);
-
-	return true;
-}
-
-static inline std::wstring NowTimestamp()
-{
-	SYSTEMTIME st{};
-	GetLocalTime(&st);
-
-	wchar_t buf[64];
-	// yyyy-mm-dd hh:mm:ss.mmm
-	StringCchPrintfW(buf, _countof(buf), L"%04u-%02u-%02u %02u:%02u:%02u.%03u",
-		st.wYear, st.wMonth, st.wDay,
-		st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
-	return buf;
-}
-
-static inline void LogMessage(const std::wstring& msg)
-{
-	LogConfigCommon* cfg = BoundLogConfig();
-	if (!cfg || !cfg->enabled || cfg->fileName.empty())
-		return;
-
-	std::lock_guard<std::mutex> lock(LogMutex());
-
-#pragma warning(push)
-#pragma warning(disable : 4996)
-	FILE* f = _wfopen(cfg->fileName.c_str(), L"a+, ccs=UTF-8");
-#pragma warning(pop)
-	if (!f)
-		return;
-
-	std::wstring clean = msg;
-	while (!clean.empty() && (clean.back() == L'\n' || clean.back() == L'\r'))
-		clean.pop_back();
-
-	std::wstring line = L"[";
-	line += NowTimestamp();
-	line += L"] ";
-
-	LogContext& c = GetLogContext();
-	if (cfg->includeCRC && c.valid)
-	{
-		wchar_t tag[80];
-		if (c.desiredSize != 0)
-			StringCchPrintfW(tag, _countof(tag), L"[ID=%08X:%u#%u] ", c.crc32, c.desiredSize, c.callSeq);
-		else
-			StringCchPrintfW(tag, _countof(tag), L"[CRC=%08X] ", c.crc32);
-		line += tag;
-	}
-
-	line += clean;
-	line += L"\n";
-
-	fputws(line.c_str(), f);
-	fclose(f);
-}
-
-void LogMessageF(const wchar_t* fmt, ...)
-{
-	if (!fmt) return;
-
-	wchar_t buffer[2048];
-
-	va_list args;
-	va_start(args, fmt);
-	_vsnwprintf_s(buffer, _countof(buffer), _TRUNCATE, fmt, args);
-	va_end(args);
-
-	LogMessage(buffer);
-}
-
-void LogMessageUtf8F(const wchar_t* fmt, ...)
-{
-	if (!fmt) return;
-
-	wchar_t buffer[2048];
-
-	va_list args;
-	va_start(args, fmt);
-	_vsnwprintf_s(buffer, _countof(buffer), _TRUNCATE, fmt, args);
-	va_end(args);
-
-	LogMessage(buffer);
-}
-
-void LogSessionHeader(const HMODULE hModule, const LogConfigCommon* log, const wchar_t* kBitness) {
-
-	// Get host PID and exe name
-	DWORD pid = GetCurrentProcessId();
-	wchar_t exePath[MAX_PATH]{};
-	GetModuleFileNameW(nullptr, exePath, _countof(exePath));
-	const wchar_t* exeName = wcsrchr(exePath, L'\\');
-	exeName = exeName ? exeName + 1 : exePath;
-
-	// This DLL's path and version
-	std::wstring dllPath = GetModulePathW(hModule);
-	std::wstring dllVer = GetModuleFileVersion(hModule); // store g_hModule from DllMain
-
-	LogMessage(L"Config:");
-	LogMessageF(L"  Process: PID=%lu, Host=%s, Bitness=%s", (ULONG)pid, exeName, GetProcessBitness().c_str());
-	LogMessageF(L"  DLL....: Path=%s", (dllPath.empty() ? L"(unknown)" : dllPath.c_str()));
-	LogMessageF(L"     DllFileVersion=%s, DllBitness=%s", (dllVer.empty() ? L"(unknown)" : dllVer.c_str()), kBitness);
-
-}
-
 
 static inline bool NormalizeRgbaFillInMemory(std::wstring& /*contents*/)
 {
@@ -1191,6 +803,106 @@ static unsigned char* MakeDebugImage(unsigned int desiredSize,
 
 	return buf;
 }
+
+class MysticLogTag final
+{
+private:
+	uint32_t     m_seq = 0;
+	uint32_t     m_crc = 0;
+	std::wstring m_name;
+	std::wstring m_tag;
+
+	static bool TryGetStreamName(_In_opt_ IStream* stream, _Out_ std::wstring& outName)
+	{
+		outName.clear();
+		if (!stream) return false;
+
+		STATSTG st{};
+		if (FAILED(stream->Stat(&st, STATFLAG_DEFAULT)) || !st.pwcsName)
+			return false;
+
+		outName = st.pwcsName;
+		CoTaskMemFree(st.pwcsName);
+		return !outName.empty();
+	}
+
+	void BuildTag(unsigned int desiredSize)
+	{
+		// Keep format aligned with your current plugin:
+		//  - With size: [ID=%08X:%u#%u]
+		//  - Without : [CRC=%08X]
+		wchar_t buf[96]{};
+
+		if (desiredSize != 0)
+			StringCchPrintfW(buf, _countof(buf), L"[ID=%08X:%u#%u] ", m_crc, desiredSize, m_seq);
+		else
+			StringCchPrintfW(buf, _countof(buf), L"[CRC=%08X] ", m_crc);
+
+		m_tag = buf;
+	}
+
+public:
+	MysticLogTag() = default;
+
+	void Reset() noexcept
+	{
+		m_seq = 0;
+		m_crc = 0;
+		m_name.clear();
+		m_tag.clear();
+	}
+
+	// Update using IStream name (best-effort).
+	// If stream has no name, the tag will become empty and crc/name will reset to 0/empty.
+	void UpdateFromStream(_In_opt_ IStream* stream, _In_ unsigned int desiredSize)
+	{
+		m_tag.clear();
+
+		std::wstring name;
+		if (!TryGetStreamName(stream, name))
+		{
+			m_name.clear();
+			m_crc = 0;
+			return;
+		}
+
+		m_name = std::move(name);
+		m_crc = Crc32OfWString(m_name);
+		++m_seq;
+
+		BuildTag(desiredSize);
+	}
+
+	// Optional: update directly from a known name/path (useful if a plugin has a path already).
+	void UpdateFromName(_In_ const std::wstring& name, _In_ unsigned int desiredSize)
+	{
+		m_tag.clear();
+
+		if (name.empty())
+		{
+			m_name.clear();
+			m_crc = 0;
+			return;
+		}
+
+		m_name = name;
+		m_crc = Crc32OfWString(m_name);
+		++m_seq;
+
+		BuildTag(desiredSize);
+	}
+
+	const wchar_t* c_str() const noexcept { return m_tag.c_str(); }
+	const wchar_t* Tag() const noexcept { return m_tag.c_str(); }
+	const wchar_t* Name() const noexcept { return m_name.c_str(); }
+	const std::wstring& TagW()  const noexcept { return m_tag; }
+	const std::wstring& NameW() const noexcept { return m_name; }
+	uint32_t Crc() const noexcept { return m_crc; }
+	uint32_t Seq() const noexcept { return m_seq; }
+
+	// Convenience: “do I have a usable tag right now?”
+	bool HasTag() const noexcept { return !m_tag.empty(); }
+};
 
 
 
