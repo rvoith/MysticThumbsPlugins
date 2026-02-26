@@ -4,9 +4,9 @@
 
 Plugin development for MysticThumbs - The SVG-, FFMpeg and DLL plugins
 
-Last updated: February 2026
+Last updated: February 26th, 2026
 
-![SVGplugin sample](.\Media\vcsvgplugin-sample.jpg) ![FFMpegplugin sample](.\Media\vcffmpegplugin-sample.jpg) ![DLLPlugin sample](.\Media\vcdllplugin-sample.jpg)
+![SVGplugin sample](Media/vcsvgplugin-sample.jpg) ![FFMpegplugin sample](Media/vcffmpegplugin-sample.jpg) ![DLLPlugin sample](Media/vcdllplugin-sample.jpg)
 
 *Examples of SVG, FFMPeg and DLL thumbnails!*
 
@@ -14,7 +14,7 @@ Last updated: February 2026
 
 MysticThumbs is a very powerful Windows thumbnail extension framework developed by MysticCoder (<https://www.mysticcoder.net>).
 
-![mt_02](.\Media\mt_02.jpg)
+![mt_02](Media/mt_02.jpg)
 
 MysticThumbs extends Windows Explorer with support for file types not handled natively by Windows.
 
@@ -82,7 +82,7 @@ These plugins in this repo are written to closely follow the philosophy of Examp
 
 # DLL Plugin
 
-![DLLPlugin sample](.\Media\vcdllplugin-sample.jpg)
+![DLLPlugin sample](Media/vcdllplugin-sample.jpg)
 
 This is the simplest in overall concept and should be the easiest plugin to build. You should be able to load the Visual Studio solution file (.sln) in Visual Studio, select Configuration (Debug or Release) and Platform (x64 or x86) and build!
 
@@ -114,7 +114,7 @@ All registry settings are within MysticThumbs control. That means that the DLL s
 
 Below you see the registry content above:
 
-![Windows Registry Settings for DLL Plugin](.\Media\mt_18.jpg)
+![Windows Registry Settings for DLL Plugin](Media/mt_18.jpg)
 
 Note that the subkey also contain `.dll, .mtp` and `.ocx` settings. These are the settings used by MysticThumbs itself. The settings that the DLL plugin itself controls, are all located in the `Settings`-key.
 
@@ -161,7 +161,7 @@ Highlights from SVG plugin's own settings:
 
 # SVG Plugin
 
-![SVGplugin sample](.\Media\vcsvgplugin-sample.jpg)
+![SVGplugin sample](Media/vcsvgplugin-sample.jpg)
 
 I noticed that the built-in support for SVG-rendering in MysticThumbs didn't quite work for my taste. I have huge collections of SVG files and needed especially the transparency to be controlled. 
 
@@ -201,11 +201,11 @@ One thing to have clear already now, is that MysticThumbs by default do have sup
 
 The plugin-architecture of MysticThumbs was first and foremost designed to allow developers to create plugins rendering *unsupported* or *new* file formats in MysticThumbs. The SVG plugin project will *replace* the existing SVG-rendering of the *Scalable Vector Graphics*-format. Below you see how that looks in MysticThumbs (choose format from the drop-down list of formats):
 
-![MysticThumbs showing the Scalable Vector Graphics format](D:\Data\Dropbox\Source\VS20xx\Projects\MysticThumbsPlugin\Media\mt_01.jpg)
+![MysticThumbs showing the Scalable Vector Graphics format](D:\Data\Dropbox\Source\VS20xx\Projects\MysticThumbsPluginMedia/mt_01.jpg)
 
 In the screenshot above you see how the .svg file extension is handled by the Scalable Vector Graphics-format. Clicking on the file extension drop-down list reveal that this format also handles the compressed .svgz files:
 
-![The handled file extensions of a format](D:\Data\Dropbox\Source\VS20xx\Projects\MysticThumbsPlugin\Media\mt_03.jpg)
+![The handled file extensions of a format](D:\Data\Dropbox\Source\VS20xx\Projects\MysticThumbsPluginMedia/mt_03.jpg)
 
 Note the eclipsis (...) at the bottom! This is where you can add more file extensions to a format, or - in our case - remove the extensions from the Scalable Vector Graphics-format. 
 
@@ -213,17 +213,17 @@ Note the eclipsis (...) at the bottom! This is where you can add more file exten
 
 Click on the eclipsis line to bring up the following dialog box:
 
-![Modifying extensions warning dialog box](.\Media\mt_04.jpg)
+![Modifying extensions warning dialog box](Media/mt_04.jpg)
 
 This brings up the following dialog box:
 
-![Adding or removing file extensions for MT format](.\Media\mt_09.jpg)
+![Adding or removing file extensions for MT format](Media/mt_09.jpg)
 
 In the dialog box above, we can now click on each file extension and press the red cross-button in the lower left corner to remove it. Repeat for svgz. Press the Apply button (green check mark in the lower right corner) to save. 
 
 Below you see how the *Scalable Vector Graphics*-format look like when it don't handle any formats anymore:
 
-![MysticThumbs with all formats cleared from existing SVG format](.\Media\mt_13.jpg)
+![MysticThumbs with all formats cleared from existing SVG format](Media/mt_13.jpg)
 
 Now you are ready to continue to build the SVG plugin.
 
@@ -317,17 +317,17 @@ Open *x86 Native Tools Command Prompt*:
 In order to let your project use the resvg C API files, the .vcxproj file needs to know about the whereabouts of these files. Below are the settings
 
 - General settings
-  ![Visual Studio 2022 - General settings](.\Media\vs_01.jpg)
+  ![Visual Studio 2022 - General settings](Media/vs_01.jpg)
   Note how the projects Output directory (marked by 1 above) automatically places the result in the MysticThumbs plugins directory. The macros ensure that the platform (32 or 64) is used both in directory naming and for Target Name (marked by 2). My plugin uses C++ version 17, as marked by 3.
 
 - Ensure SVGPLUG_EXPORTS is used
-  ![Visual Studio 2022 - C/C++ and Preprocessor settings ](.\Media\vs_02.jpg)
+  ![Visual Studio 2022 - C/C++ and Preprocessor settings ](Media/vs_02.jpg)
 
 - Runtime Library: Mutil Thread **/MT** and **/MTd**
-  ![Visual Studio 2022 - C/C++ Code Generation Settings](.\Media\vs_03.jpg)
+  ![Visual Studio 2022 - C/C++ Code Generation Settings](Media/vs_03.jpg)
 
 - Include directories:
-  ![Visual Studio 2022 - VC Directories](.\Media\vs_04.jpg)
+  ![Visual Studio 2022 - VC Directories](Media/vs_04.jpg)
   Above you see the settings for x64 builds
 
   - x64:
@@ -367,7 +367,7 @@ In order to let your project use the resvg C API files, the .vcxproj file needs 
     dumpbin /dependents VCSVGPlugin64.mtp
   ```
   Below you see a normal /dependents dump from my 64-bit .mtp file:
-  ![dumpbin /dependents dump on VCSVGPlugin64.mtp](.\Media\vs_05.jpg) 
+  ![dumpbin /dependents dump on VCSVGPlugin64.mtp](Media/vs_05.jpg) 
 
 ### Result
 
@@ -409,7 +409,7 @@ All registry settings are within MysticThumbs control. That means that the SVG s
 
 Below you see the registry content above:
 
-![Windows Registry Settings for SVG Plugin](.\Media\mt_12.jpg)
+![Windows Registry Settings for SVG Plugin](Media/mt_12.jpg)
 
 Note that the subkey also contain `.svg` and `.svgz` settings. These are the settings used by MysticThumbs itself. The settings that the SVG plugin itself controls, are all located in the `Settings`-key.
 
@@ -473,7 +473,7 @@ Highlights from SVG plugin's own settings:
 
 An important note regarding MaxSvgDim and MaxSvgBytes: MysticThumbs itself also has similar protection settings.
 
-![MysticThumbs own protection settings](.\Media\mt_14.jpg)
+![MysticThumbs own protection settings](Media/mt_14.jpg)
 
 Keep the defaults and you should be pretty safe, or turn off the settings in the plugin and activate them in MysticThumbs itself as shown above.
 
@@ -531,7 +531,7 @@ This section defines an **external fallback thumbnail renderer**. It is used onl
 
 # FFMpeg Plugin 
 
-![FFMpegplugin sample](.\Media\vcffmpegplugin-sample.jpg)
+![FFMpegplugin sample](Media/vcffmpegplugin-sample.jpg)
 
 FFMpeg (https://www.ffmpeg.org) is an extremely powerful set of tools to work with video and audio files. The FFMPeg plugin will render the following video file types: mp4, m4v, mov, mkv, avi, wmv, flv, webm, mpg, mpeg,ts, m2ts and mts! It could also be set up to render different audio file types such as: mp3, aac, m4a, flac, ogg and wav. 
 
@@ -625,11 +625,11 @@ One note, there is no point in doing a `dumpbin /dependents VCFFMpegPlugin64.mtp
 
 MysticThumbs has a smart way of separating the 32- and 64-bit DLLs. By having a separate 32- and 64- directory in the plugins directory, MysticThumbs and it's Windows thumbnail extension DLL MysticThumbs32.dll and MysticThumbs64.dll can reference the correct bitness. Here is what it looks like in the `%APPDATA%\MysticThumbs\Plugins` (yes, copy the directory to *your* file explorer to see *your* plugins directory)
 
-![File Explorer shows MysticThumbs Plugins content](.\Media\mt_15.jpg)
+![File Explorer shows MysticThumbs Plugins content](Media/mt_15.jpg)
 
  Note the two directories, 32 and 64. If we take a peak into the 64-directory after all three plugins has been built, it looks like this:
 
-![File Explorer shows MysticThumbs Plugins 64 content](.\Media\mt_16.jpg)
+![File Explorer shows MysticThumbs Plugins 64 content](Media/mt_16.jpg)
 
 Here you see three .mtp plugins alongside the 64-bit dlls from ffmpeg project that we created previously. I have highlighted the .mtp files yellow, and all the ffmpeg dlls green.
 
@@ -641,7 +641,7 @@ All registry settings are within MysticThumbs control. That means that the FFMpe
 
 Below you see the registry content above:
 
-![Windows Registry Settings for FFMpeg Plugin](.\Media\mt_17.jpg)
+![Windows Registry Settings for FFMpeg Plugin](Media/mt_17.jpg)
 
 Note that the subkey also contain `.avi, .flac, .flv` and a whole sleeve of other file extension settings. These are the settings used by MysticThumbs itself. The settings that the FFMpeg plugin itself controls, are all located in the `Settings`-key.
 
@@ -712,7 +712,7 @@ Highlights from FFMPEG plugin's own settings:
 
 An important note regarding MaxFFMpegDim and MaxFFMpegBytes: MysticThumbs itself also has similar protection settings.
 
-![MysticThumbs own protection settings](.\Media\mt_14.jpg)
+![MysticThumbs own protection settings](Media/mt_14.jpg)
 
 Keep the defaults and you should be pretty safe, or turn off the settings in the plugin and activate them in MysticThumbs itself as shown above.
 
@@ -775,11 +775,11 @@ All cleanup paths must execute — even on failure.
 
 All plugins may share logging via MysticThumbs logging support. When enabled, a mysticthumbs.log will be created in the `%LOCALAPPDATA%\MysticThumbs`-directory. Note that there may be many processes (explorer.exe and others) creating thumbnails at the same time. Thus, it may be difficult to group together actions belonging to a specific file. For example, the SVGZ file Ghostscript_Tiger.svg has a CRC32 value of CB63A406. By using an editor which highlights , such as 010 Editor (https://www.sweetscape.com/010editor/), you can quickly see and group together lines belonging to a specific file. Below you see how each CRC32-code is highlighted:
 
-![010 Editor showing CRC32 highlighting in mysticthumbs.log](.\Media\010-01.jpg)
+![010 Editor showing CRC32 highlighting in mysticthumbs.log](Media/010-01.jpg)
 
 … and even better, below I have searched for the CRC32-code and now you can quickly navigate to any of the referenced lines:
 
-![010 Editor showing CRC32 search and highlighting in mysticthumbs.log](.\Media\010-02.jpg)
+![010 Editor showing CRC32 search and highlighting in mysticthumbs.log](Media/010-02.jpg)
 
 All plugins share:
 
@@ -844,7 +844,7 @@ This makes debugging Explorer-hosted calls dramatically easier.
 	* Set *Command Arguments* to a file of the desired file type. Remember to use quotes.
 	
 	
-	![Visual Studio 2022 - Debugging settings](.\Media\vs_06.jpg)
+	![Visual Studio 2022 - Debugging settings](Media/vs_06.jpg)
 	
 
 
