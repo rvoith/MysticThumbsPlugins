@@ -1,0 +1,20 @@
+FFmpeg
+=======
+
+This product includes FFmpeg libraries.
+
+Project homepage:
+    https://ffmpeg.org
+
+License:
+    GNU Lesser General Public License v2.1 (LGPLv2.1)
+
+The FFmpeg libraries included in this distribution were built using vcpkg.
+
+No GPL-only components were enabled in this build.
+
+The FFmpeg source code is available at:
+    https://github.com/FFmpeg/FFmpeg
+
+Users are permitted to replace the FFmpeg DLLs with compatible versions
+in accordance with the LGPL license.

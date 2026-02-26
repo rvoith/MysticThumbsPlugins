@@ -1,0 +1,21 @@
+resvg
+------
+
+Project: resvg
+Homepage: https://github.com/linebender/resvg
+License: Mozilla Public License 2.0 (MPL-2.0)
+
+This product includes software developed by the resvg project.
+
+resvg is licensed under the Mozilla Public License, Version 2.0.
+A copy of the MPL-2.0 license is included in this distribution
+in the file "MPL-2.0.txt".
+
+The source code for resvg is available at:
+https://github.com/linebender/resvg
+
+If you have modified resvg, the modified source files must be
+made available under the terms of MPL-2.0.
+
+Version used: commit 0ecb332e51360ed59da2c0e5b1167311f77cac8a
+git commit hash found by using git rev-parse HEAD
