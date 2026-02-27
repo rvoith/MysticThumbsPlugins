@@ -16,6 +16,7 @@
 #include <string>
 #include <sstream>
 #include <map>
+#include <algorithm>
 
 #include <winver.h>
 #pragma comment(lib, "Version.lib")
@@ -989,7 +990,8 @@ static void DrawBuildStrip(
 	float stripH,
 	const std::wstring& label,
 	const D2D1_COLOR_F& stripColor,
-	float cornerRadius)
+	float cornerRadius,
+	float uiScale)
 {
 	if (!rt || !dw) return;
 	if (label.empty()) return;
@@ -998,6 +1000,7 @@ static void DrawBuildStrip(
 	const float plateW = plateRect.right - plateRect.left;
 	if (plateH <= 1.0f || plateW <= 1.0f) return;
 
+	uiScale = std::clamp(uiScale, 0.25f, 8.0f);
 	stripH = std::clamp(stripH, 1.0f, plateH);
 
 	// Limit radius to something sane
@@ -1049,7 +1052,7 @@ static void DrawBuildStrip(
 		DWRITE_FONT_WEIGHT_SEMI_BOLD,
 		DWRITE_FONT_STYLE_NORMAL,
 		DWRITE_FONT_STRETCH_NORMAL,
-		std::clamp(stripH * 0.60f, 9.f, 22.f),
+		std::clamp(stripH * 0.60f, 9.f * uiScale, 22.f * uiScale),
 		L"en-us",
 		&fmt);
 
@@ -1075,11 +1078,12 @@ static void DrawBuildStrip(
 	const D2D1_RECT_F& plateRect,
 	float stripH,
 	const std::wstring& label,
-	const D2D1_COLOR_F& stripColor)
+	const D2D1_COLOR_F& stripColor,
+	float uiScale)
 {
 	const float plateH = plateRect.bottom - plateRect.top;
-	float guessedRadius = std::clamp(plateH * 0.10f, 4.f, 14.f); // similar feel to your plate radius
-	DrawBuildStrip(rt, dw, plateRect, stripH, label, stripColor, guessedRadius);
+	float guessedRadius = std::clamp(plateH * 0.10f, 4.f * uiScale, 14.f * uiScale); // similar feel to your plate radius
+	DrawBuildStrip(rt, dw, plateRect, stripH, label, stripColor, guessedRadius, uiScale);
 }
 
 
@@ -1161,10 +1165,12 @@ static void DrawBitnessBadge(
 	bool diamond,
 	float sizePx,
 	float marginPx,
-	const D2D1_COLOR_F& fillColor)
+	const D2D1_COLOR_F& fillColor,
+	float uiScale)
 {
 	if (!rt || !dw) return;
 
+	const float S = std::clamp(uiScale, 0.25f, 8.0f);
 	const float s = sizePx;
 	const float x0 = W - marginPx - s;
 	const float y0 = marginPx;
@@ -1180,11 +1186,13 @@ static void DrawBitnessBadge(
 	rt->CreateSolidColorBrush(D2D1::ColorF(1.f, 1.f, 1.f, 0.25f), &stroke);
 	rt->CreateSolidColorBrush(D2D1::ColorF(1.f, 1.f, 1.f, 1.0f), &textBrush);
 
+	const float strokeW = std::clamp(0.75f * S, 1.0f, 3.0f);
+
 	if (!diamond)
 	{
 		D2D1_ELLIPSE e = D2D1::Ellipse(D2D1::Point2F(x0 + s * 0.5f, y0 + s * 0.5f), s * 0.5f, s * 0.5f);
 		rt->FillEllipse(e, fill);
-		rt->DrawEllipse(e, stroke, 1.0f);
+		rt->DrawEllipse(e, stroke, strokeW);
 	}
 	else
 	{
@@ -1204,12 +1212,12 @@ static void DrawBitnessBadge(
 			sink->Close();
 
 			rt->FillGeometry(geo, fill);
-			rt->DrawGeometry(geo, stroke, 1.0f);
+			rt->DrawGeometry(geo, stroke, strokeW);
 		}
 	}
 
 	// Text in badge
-	float badgeFontSize = std::clamp(s * 0.42f, 9.f, 20.f);
+	float badgeFontSize = std::clamp(s * 0.42f, 9.f, 20.f * S);
 
 	CComPtr<IDWriteTextFormat> fmt;
 	dw->CreateTextFormat(
@@ -1230,9 +1238,13 @@ static void DrawBitnessBadge(
 
 static void DrawCatalogShield(
 	ID2D1RenderTarget* rt,
-	float x, float y, float s)
+	float x, float y, float s,
+	float uiScale)
 {
 	if (!rt || !g_d2d) return;
+
+	const float S = std::clamp(uiScale, 0.25f, 8.0f);
+	const float strokeW = std::clamp(0.75f * S, 1.0f, 3.0f);
 
 	// Shield geometry (same as before)
 	CComPtr<ID2D1PathGeometry> geo;
@@ -1274,7 +1286,7 @@ static void DrawCatalogShield(
 	rt->CreateSolidColorBrush(D2D1::ColorF(1.f, 1.f, 1.f, 0.28f), &stroke);
 
 	rt->FillGeometry(geo, fill);
-	if (stroke) rt->DrawGeometry(geo, stroke, 1.0f);
+	if (stroke) rt->DrawGeometry(geo, stroke, strokeW);
 
 	// Small "folder tab" cue (simple rounded rect) in top-left area of the shield
 	CComPtr<ID2D1SolidColorBrush> tab;
@@ -1289,9 +1301,13 @@ static void DrawCatalogShield(
 
 static void DrawDigitalSignedShield(
 	ID2D1RenderTarget* rt,
-	float x, float y, float s) // top-left + size
+	float x, float y, float s,
+	float uiScale) // top-left + size
 {
 	if (!rt || !g_d2d) return;
+
+	const float S = std::clamp(uiScale, 0.25f, 8.0f);
+	const float strokeW = std::clamp(0.75f * S, 1.0f, 3.0f);
 
 	CComPtr<ID2D1PathGeometry> geo;
 	if (FAILED(g_d2d->CreatePathGeometry(&geo)) || !geo) return;
@@ -1341,7 +1357,7 @@ static void DrawDigitalSignedShield(
 
 	// Fill + outline
 	rt->FillGeometry(geo, fill);
-	if (stroke) rt->DrawGeometry(geo, stroke, 1.0f);
+	if (stroke) rt->DrawGeometry(geo, stroke, strokeW);
 
 	// Optional: subtle inner highlight line down the center (adds "life")
 	// Comment out if you want it flatter.
@@ -1353,7 +1369,7 @@ static void DrawDigitalSignedShield(
 			D2D1::Point2F(x + s * 0.50f, y + s * 0.18f),
 			D2D1::Point2F(x + s * 0.50f, y + s * 0.82f),
 			highlight,
-			1.0f);
+			strokeW);
 	}
 }
 
@@ -1368,6 +1384,9 @@ private:
 	// Valid for lifetime through the lifetime of the plugin instance until the end of Destroy
 	IMysticThumbsPluginContext* m_context{};
 	const IMysticThumbsLog* m_log{};
+
+	// UI scale factor used to keep QuickView resizing visually consistent (baseline 256px)
+	float m_scale = 1.0f;
 
 	struct PluginConfig
 	{
@@ -1467,17 +1486,23 @@ public:
 		config.context = m_context;
 		config.Load();
 
-		const unsigned int pingSizeHint = (ping.requestedWidth && ping.requestedHeight) ? std::max(1u, std::min(ping.requestedWidth, ping.requestedHeight)) : 0u;
+		const unsigned int pingSizeHint = (ping.requestedWidth && ping.requestedHeight) ? std::max(1u, std::max(ping.requestedWidth, ping.requestedHeight)) : 0u;
 		m_logTag.UpdateFromStream(m_context ? m_context->GetStream() : nullptr, pingSizeHint);
 
 		IStream* pStream = m_context ? m_context->GetStream() : nullptr;
 		if (!pStream)
-			if (m_log) m_log->logf(L"%sPing: context stream is null", m_logTag.Tag());
+			m_log->logf(L"%sPing: context stream is null", m_logTag.Tag());
 
-		if (m_log) m_log->logf(L"%sPing (DLL): File \"%s\"", m_logTag.Tag(), m_logTag.Name());
+		m_log->logf(L"%sPing (DLL): File \"%s\"", m_logTag.Tag(), m_logTag.Name());
 
-		unsigned int w = ping.requestedWidth ? ping.requestedWidth : 256;
-		unsigned int h = ping.requestedHeight ? ping.requestedHeight : 256;
+		unsigned int w = pingSizeHint ? pingSizeHint : 256;
+		unsigned int h = w;
+
+		// Baseline visuals are tuned for ~256px thumbnails. QuickView can resize the preview window,
+		// so we track a scale factor and apply it to capped UI elements (fonts, pins, badges, shields).
+		m_scale = (w > 0) ? (float)w / 256.0f : 1.0f;
+		m_scale = std::clamp(m_scale, 0.25f, 8.0f);
+
 		ping.width = w;
 		ping.height = h;
 		ping.bitDepth = 32;
@@ -1510,43 +1535,25 @@ public:
 		const std::wstring& fullText,
 		const std::wstring& bitness,
 		BuildFlavor flavor,
-		const SigKind sigKind)
+		const SigKind sigKind,
+		float uiScale)
 	{
 		if (!bmp || !g_d2d || !g_dw) return E_INVALIDARG;
 
 		const float W = (float)params.desiredWidth;
 		const float H = (float)params.desiredHeight;
 
+		const float S = std::clamp(uiScale, 0.25f, 8.0f);
+
 		if (!(W > 0.f) || !(H > 0.f))
 			return E_INVALIDARG;
 
-		// ---- Safe helpers -------------------------------------------------------
-
-		auto clamp_safe = [](float v, float lo, float hi) -> float
-			{
-				// Never assert: if bounds are inverted, collapse to lo (fail-closed).
-				if (hi < lo) return lo;
-				return std::clamp(v, lo, hi);
-			};
-
-		auto clamp_min_to_max = [&](float desiredMin, float maxVal) -> float
-			{
-				// Ensure min never exceeds max (prevents clamp asserts).
-				return std::min(desiredMin, maxVal);
-			};
-
-		auto clamp_pos = [&](float v, float lo, float hi) -> float
-			{
-				// Used for positioning where inverted bounds can happen on tiny sizes.
-				if (hi < lo) return lo;
-				return std::clamp(v, lo, hi);
-			};
 
 		auto clamp_nonneg = [](float v) -> float { return (v < 0.f) ? 0.f : v; };
 
 		// Scale down geometry on small thumbnails so padding/margins don't dominate.
 		const float minDim = std::min(W, H);
-		const float s = clamp_safe(minDim / 128.f, 0.25f, 1.0f);
+		const float s = std::clamp(minDim / 128.f, 0.25f, 1.0f);
 
 		// ---- Markup parsing -----------------------------------------------------
 
@@ -1656,7 +1663,7 @@ public:
 			: D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
 
 		// Brushes
-		const float plateAlpha = plateOpaque ? 1.0f : clamp_safe(cfg.plateOpacity / 100.f, 0.f, 1.f);
+		const float plateAlpha = plateOpaque ? 1.0f : std::clamp(cfg.plateOpacity / 100.f, 0.f, 1.f);
 		D2D1_COLOR_F plateColor = D2D1::ColorF(0.16f, 0.16f, 0.16f, plateAlpha);
 		D2D1_COLOR_F accent = GetBitnessAccentColor(bitness, 1.0f);
 
@@ -1695,8 +1702,8 @@ public:
 		float plateW = 0.f;
 		{
 			const float preferred = W * 0.84f;
-			const float minPlateW = clamp_min_to_max(60.f, maxPlateW);
-			plateW = clamp_safe(preferred, minPlateW, maxPlateW);
+			const float minPlateW = std::min(60.f, maxPlateW);
+			plateW = std::clamp(preferred, minPlateW, maxPlateW);
 		}
 
 		float stripReserve = 0.0f;
@@ -1704,14 +1711,15 @@ public:
 		{
 			float pct = (flavor == BuildFlavor::Release) ? 0.10f : 0.12f;
 			// Ensure min doesn't exceed max when H is tiny
-			const float maxStrip = clamp_min_to_max(26.f, H);
-			const float minStrip = clamp_min_to_max(12.f, maxStrip);
-			stripReserve = clamp_safe(H * pct, minStrip, maxStrip);
+			const float maxStrip = std::min(26.f * S, H);
+			const float minStrip = std::min(12.f * S, maxStrip);
+			stripReserve = std::clamp(H * pct, minStrip, maxStrip);
 		}
 
-		float cornerRadius = clamp_safe(H * 0.06f, 4.f, 14.f);
-		float pinThickness = clamp_safe(cornerRadius * 0.60f, 6.f, 13.f);
-		float pinLength = clamp_safe(H * 0.060f, 6.f, 16.f);
+		float cornerRadius = std::clamp(H * 0.06f, 4.f, 14.f * S);
+		float pinThickness = std::clamp(cornerRadius * 0.60f, 6.f, 13.f * S);
+		pinThickness *= std::clamp(0.85f + 0.15f * S, 1.0f, 1.8f); // widen pins a tad as size increases
+		float pinLength = std::clamp(H * 0.060f, 6.f, 16.f * S);
 		int   pinsPerSide = 7;
 
 		// ---- Layout limits (SAFE) ----------------------------------------------
@@ -1719,19 +1727,19 @@ public:
 		// "Available text box" inside plate, never negative, and no clamp asserts.
 		const float textWAvail = clamp_nonneg(plateW - padX * 2.f);
 		const float textWMax = std::min(textWAvail, W);
-		const float textWMin = clamp_min_to_max(20.f, textWMax);
-		const float textW = (textWMax > 0.f) ? clamp_safe(textWMax, textWMin, textWMax) : 0.f;
+		const float textWMin = std::min(20.f, textWMax);
+		const float textW = (textWMax > 0.f) ? std::clamp(textWMax, textWMin, textWMax) : 0.f;
 
 		const float textHAvail = clamp_nonneg(maxPlateH - padY * 2.f - stripReserve);
 		const float textHMaxCap = std::min(textHAvail, H);
-		const float textHMin = clamp_min_to_max(20.f, textHMaxCap);
-		const float textHMax = (textHMaxCap > 0.f) ? clamp_safe(textHMaxCap, textHMin, textHMaxCap) : 0.f;
+		const float textHMin = std::min(20.f, textHMaxCap);
+		const float textHMax = (textHMaxCap > 0.f) ? std::clamp(textHMaxCap, textHMin, textHMaxCap) : 0.f;
 
-		float baseFontStart = clamp_safe(H * 0.145f, 9.f, 40.f);
+		float baseFontStart = std::clamp(H * 0.145f, 9.f, 40.f * S);
 		float baseFontMin = 9.f;
 
 		const float lineSpacingMul = 1.06f;
-		const float smallScale = clamp_safe((float)cfg.labelScalePct, 50.f, 100.f) / 100.f;
+		const float smallScale = std::clamp((float)cfg.labelScalePct, 50.f, 100.f) / 100.f;
 		const float tinyScale = 0.55f;
 
 		DWRITE_TRIMMING trim{};
@@ -1771,7 +1779,7 @@ public:
 					if (lr.size == LineRun::SizeTag::Small) scale = smallScale;
 					else if (lr.size == LineRun::SizeTag::Tiny) scale = tinyScale;
 
-					float fontSize = clamp_safe(baseFont * scale, 8.f, 80.f);
+					float fontSize = std::clamp(baseFont * scale, 8.f, 80.f * S);
 
 					DWRITE_FONT_WEIGHT weight = lr.strong ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL;
 
@@ -1821,7 +1829,7 @@ public:
 						bestFormatForBadge = fmt;
 				}
 
-				float gap = clamp_safe(baseFont * 0.10f, 0.f, 3.f);
+				float gap = std::clamp(baseFont * 0.10f, 0.f, 3.f * S);
 				totalH += gap * (float)std::max<int>(0, (int)lines.size() - 1);
 
 				bestBuilt = std::move(built);
@@ -1836,7 +1844,7 @@ public:
 		float gap = 0.f;
 		if (!bestBuilt.empty())
 		{
-			gap = clamp_safe(bestBuilt[0].fontSize * 0.18f, 0.f, 3.f);
+			gap = std::clamp(bestBuilt[0].fontSize * 0.18f, 0.f, 3.f * S);
 			for (size_t i = 0; i < bestBuilt.size(); ++i)
 			{
 				totalTextH += bestBuilt[i].drawH;
@@ -1846,17 +1854,17 @@ public:
 
 		// Plate height: avoid clamp asserts if maxPlateH < 30, etc.
 		const float plateHVal = totalTextH + padY * 2.f + stripReserve;
-		const float plateHMin = clamp_min_to_max(30.f, maxPlateH);
-		float plateH = clamp_safe(plateHVal, plateHMin, maxPlateH);
+		const float plateHMin = std::min(30.f, maxPlateH);
+		float plateH = std::clamp(plateHVal, plateHMin, maxPlateH);
 
 		// Keep plate visually tall when possible, but never exceed maxPlateH and never clamp-invalid.
-		const float desiredMinPlateH = clamp_safe(H * 0.85f, 0.f, maxPlateH);
+		const float desiredMinPlateH = std::clamp(H * 0.85f, 0.f, maxPlateH);
 		if (plateH < desiredMinPlateH)
 			plateH = desiredMinPlateH;
 
 		// Horizontal placement: safe even when bounds invert.
-		float left = clamp_pos((W - plateW) * 0.5f, outerMargin, W - plateW - outerMargin);
-		float top = clamp_pos((H - plateH) * 0.5f, outerMargin, H - plateH - outerMargin);
+		float left = std::clamp((W - plateW) * 0.5f, outerMargin, W - plateW - outerMargin);
+		float top = std::clamp((H - plateH) * 0.5f, outerMargin, H - plateH - outerMargin);
 
 		D2D1_RECT_F plateRect = D2D1::RectF(left, top, left + plateW, top + plateH);
 
@@ -1867,8 +1875,8 @@ public:
 		else if (bitness == L"64-bit") { badgeText = L"64"; diamond = false; }
 		else if (bitness == L"ARM64") { badgeText = L"A64"; diamond = false; }
 
-		float badgeSize = clamp_safe(H * 0.22f, 22.f, 44.f);
-		float badgeMargin = clamp_safe(H * 0.010f, 4.f, 10.f);
+		float badgeSize = std::clamp(H * 0.22f, 22.f, 44.f * S);
+		float badgeMargin = std::clamp(H * 0.010f, 4.f, 10.f * S);
 
 		rt->BeginDraw();
 		rt->Clear(D2D1::ColorF(0, 0, 0, 0));
@@ -1934,24 +1942,24 @@ public:
 
 		// Strip
 		if (stripReserve > 0.0f && showStrip && flavorText && *flavorText)
-			DrawBuildStrip(rt, g_dw, plateRect, stripReserve, std::wstring(flavorText), flavorColor, cornerRadius);
+			DrawBuildStrip(rt, g_dw, plateRect, stripReserve, std::wstring(flavorText), flavorColor, cornerRadius, S);
 
 		// Bitness badge 
 		D2D1_COLOR_F accentColor = GetBitnessAccentColor(bitness, 1.0f);
 		DrawBitnessBadge(rt, g_dw,
 			bestFormatForBadge ? bestFormatForBadge : (!bestBuilt.empty() ? bestBuilt[0].fmt : nullptr),
-			W, H, badgeText, diamond, badgeSize, badgeMargin, accentColor);
+			W, H, badgeText, diamond, badgeSize, badgeMargin, accentColor, S);
 
 		// Signature shield
-		float shieldSize = clamp_safe(H * 0.25f, 16.f, 35.f);
+		float shieldSize = std::clamp(H * 0.25f, 16.f, 35.f * S);
 		float sx = plateRect.right - shieldSize * 0.45f;
 		float sy = plateRect.bottom - shieldSize * 0.75f;
 		sy -= (stripReserve > 0.0f ? stripReserve * 0.15f : 0.0f);
 
 		if (sigKind == SigKind::Embedded)
-			DrawDigitalSignedShield(rt, sx, sy, shieldSize);
-		else if (sigKind == SigKind::Catalog)
-			DrawCatalogShield(rt, sx, sy, shieldSize);
+			DrawDigitalSignedShield(rt, sx, sy, shieldSize, S);
+ 		else if (sigKind == SigKind::Catalog)
+ 			DrawCatalogShield(rt, sx, sy, shieldSize, S);
 
 		hr = rt->EndDraw();
 		return hr;
@@ -2036,7 +2044,12 @@ public:
 
 		SigKind sigKind = DetectSigKind(path);
 
-		hr = RenderTextThumb(config, bmp, params, expanded, bitness, flavor, sigKind);
+		float uiScale = (float)std::max(params.desiredWidth, params.desiredHeight) / 256.0f;
+		uiScale = std::clamp(uiScale, 0.25f, 8.0f);
+		// Prefer Ping() derived scale (matches QuickView ping size hint), but fall back if needed.
+		if (m_scale > 0.0f) uiScale = m_scale;
+
+		hr = RenderTextThumb(config, bmp, params, expanded, bitness, flavor, sigKind, uiScale);
 		if (FAILED(hr)) return hr;
 
 		*lplpOutputImage = bmp.Detach();

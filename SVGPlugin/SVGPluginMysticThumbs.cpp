@@ -280,7 +280,7 @@ private:
 	bool GetCapabilities(_Out_ MysticThumbsPluginCapabilities& capabilities) override
 	{
 		capabilities = {};
-		capabilities |= PluginCapabilities_CanConfigure;
+		capabilities |= PluginCapabilities_CanConfigure | PluginCapabilities_IsProcedural;
 		// NOTE: We do not set PluginCapabilities_CanNonUniformSize because this plugin currently renders square thumbnails (desiredSize x desiredSize) with aspect-preserving fit.
 		return true;
 	}
@@ -382,7 +382,7 @@ private:
 		unsigned int outH = (isQuickView && ping.requestedHeight) ? ping.requestedHeight : fallback;
 
 		// Try to determine actual SVG canvas size quickly (no rasterization).
-		// If this fails, I keep the fallback dimensions.
+		// If this fails, I keep the fallback dimensions. 
 		if (pStream) {
 			LARGE_INTEGER zero{};
 			ULARGE_INTEGER savedPos{};

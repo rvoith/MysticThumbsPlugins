@@ -88,7 +88,7 @@ extern "C" {
 	{ 0xeca56b2f, 0xbb26, 0x4507, { 0x8d, 0x3c, 0x7f, 0x25, 0x96, 0x8d, 0x34, 0xf8 } };
 
 	// Build-time bitness
-#if defined(_WIN64)
+#if defined(_WIN64) 
 	constexpr wchar_t* kBitness = L"64-bit";
 #else
 	constexpr wchar_t* kBitness = L"32-bit";
@@ -396,7 +396,7 @@ public:
 		virtual bool GetCapabilities(_Out_ MysticThumbsPluginCapabilities& capabilities) override
 		{
 			capabilities = {};
-			capabilities |= PluginCapabilities_CanConfigure; // | PluginCapabilities_CanNonUniformSize;
+			capabilities |= PluginCapabilities_CanConfigure | PluginCapabilities_IsProcedural;
 			return true;
 		}
 
