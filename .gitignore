@@ -3,6 +3,7 @@
 *.VC.db
 *.VC.VC.opendb
 *.suo
+*.aps
 *.user
 *.userosscache
 *.sln.docstates

@@ -16,6 +16,7 @@
 #include <string>
 #include <sstream>
 #include <map>
+#include <algorithm>
 
 #include <winver.h>
 #pragma comment(lib, "Version.lib")
@@ -24,11 +25,11 @@
 #include <softpub.h>
 #include <mscat.h>
 #pragma comment(lib, "wintrust.lib")
-#pragma comment(lib, "crypt32.lib")
+#pragma comment(lib, "crypt32.lib") 
 
 #include <d2d1.h>
 #include <dwrite.h>
-#include <dxgiformat.h>
+#include <dxgiformat.h> 
 #pragma comment(lib, "d2d1.lib")
 #pragma comment(lib, "dwrite.lib")
 
@@ -37,18 +38,16 @@
 // -----------------------------------------------------------------------------
 // Registry settings (under MysticThumbs per-plugin registry root)
 // -----------------------------------------------------------------------------
-static const wchar_t* REG_SETTINGS_KEY = L"";
-
-static const wchar_t* REG_TEMPLATE      = L"Template";
+static const wchar_t* REG_TEMPLATE = L"Template";
 static const wchar_t* REG_PLATE_OPACITY = L"PlateOpacity";   // DWORD 0..100
-static const wchar_t* REG_PLATE_OPAQUE  = L"PlateOpaque";    // DWORD 0/1
-static const wchar_t* REG_LABEL_SCALE   = L"LabelScalePct";  // DWORD e.g. 75 means 75%
+static const wchar_t* REG_PLATE_OPAQUE = L"PlateOpaque";    // DWORD 0/1
+static const wchar_t* REG_LABEL_SCALE = L"LabelScalePct";  // DWORD e.g. 75 means 75%
 
 // Defaults
 static const wchar_t* DEFAULT_TEMPLATE =
-   L"<center>$(DllFileType)</center>\r\n"
-   L"<center><strong>$(DLLFileVersionAsText)</strong></center>\r\n"
-   L"<tiny>$(VI_FileDescriptionFirstSentence)</tiny>\r\n";
+L"<center>$(DllFileType)</center>\r\n"
+L"<center><strong>$(DLLFileVersionAsText)</strong></center>\r\n"
+L"<tiny>$(VI_FileDescriptionFirstSentence)</tiny>\r\n";
 
 // -----------------------------------------------------------------------------
 // Direct2D / DirectWrite factories (process-wide)
@@ -60,10 +59,9 @@ static HMODULE g_hModule = nullptr;
 
 // Plugin metadata
 static const wchar_t* s_name = L"Voith's CODE DLL Plugin";
-static const wchar_t* s_description = L"Plugin creates thumbnails for DLLs showing version info, 32- or 64-bit badge";
+static const wchar_t* s_description = L"Plugin creates thumbnails for DLLs showing version info, description, signing-shield and 32- or 64-bit badge";
 static const wchar_t* s_author = L"Voith's CODE\nwww.vcode.no";
 
-// NOTE: Replace with your own GUID if you want uniqueness.
 static const GUID s_guid =
 { 0x4f0b2d7a, 0xa3f3, 0x4c3a, { 0x8e, 0x7e, 0x1a, 0x92, 0x8e, 0x19, 0x7b, 0x31 } };
 
@@ -80,18 +78,15 @@ static const wchar_t* s_extensions[] = { L".dll", L".mtp", L".ocx" };
 // Small utilities
 // -----------------------------------------------------------------------------
 
-// IM:2026-02-23 Use the template typed std::clamp from <algorithm> (since C++17) instead of this custom function, which is more error-prone and less efficient.
-//static float Clamp(float v, float lo, float hi) { return (v < lo) ? lo : (v > hi) ? hi : v; }
-
 // Get file path from IStream via IPersistFile (MysticCoder recommended method)
 static std::wstring GetPathFromStream(IStream* pStream)
 {
-    if (!pStream) return L"";
-    CComQIPtr<IPersistFile> pf(pStream);
-    if (!pf) return L"";
-    CComHeapPtr<OLECHAR> psz;
-    if (FAILED(pf->GetCurFile(&psz)) || !psz) return L"";
-    return std::wstring(psz);
+	if (!pStream) return L"";
+	CComQIPtr<IPersistFile> pf(pStream);
+	if (!pf) return L"";
+	CComHeapPtr<OLECHAR> psz;
+	if (FAILED(pf->GetCurFile(&psz)) || !psz) return L"";
+	return std::wstring(psz);
 }
 
 static std::wstring GetDllFileTypeFromPath(const std::wstring& path)
@@ -360,7 +355,7 @@ static bool IsFileAuthenticodeSigned(const std::wstring& path)
 
 	WINTRUST_FILE_INFO fileInfo{};
 	fileInfo.cbStruct = sizeof(fileInfo);
-	fileInfo.pcwszFilePath = path.c_str(); 
+	fileInfo.pcwszFilePath = path.c_str();
 
 	GUID policyGUID = WINTRUST_ACTION_GENERIC_VERIFY_V2;
 
@@ -392,53 +387,53 @@ static bool IsFileAuthenticodeSigned(const std::wstring& path)
 // -----------------------------------------------------------------------------
 static std::wstring GetPEBitnessFromFile(const std::wstring& path)
 {
-    HANDLE hFile = CreateFileW(
-        path.c_str(),
-        GENERIC_READ,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        nullptr,
-        OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL,
-        nullptr);
+	HANDLE hFile = CreateFileW(
+		path.c_str(),
+		GENERIC_READ,
+		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+		nullptr,
+		OPEN_EXISTING,
+		FILE_ATTRIBUTE_NORMAL,
+		nullptr);
 
-    if (hFile == INVALID_HANDLE_VALUE)
-        return L"Unknown";
+	if (hFile == INVALID_HANDLE_VALUE)
+		return L"Unknown";
 
-    BYTE buffer[4096]{};
-    DWORD bytesRead = 0;
+	BYTE buffer[4096]{};
+	DWORD bytesRead = 0;
 
-    if (!ReadFile(hFile, buffer, sizeof(buffer), &bytesRead, nullptr) ||
-        bytesRead < sizeof(IMAGE_DOS_HEADER))
-    {
-        CloseHandle(hFile);
-        return L"Unknown";
-    }
+	if (!ReadFile(hFile, buffer, sizeof(buffer), &bytesRead, nullptr) ||
+		bytesRead < sizeof(IMAGE_DOS_HEADER))
+	{
+		CloseHandle(hFile);
+		return L"Unknown";
+	}
 
-    CloseHandle(hFile);
+	CloseHandle(hFile);
 
-    const IMAGE_DOS_HEADER* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(buffer);
-    if (dos->e_magic != IMAGE_DOS_SIGNATURE)
-        return L"Unknown";
+	const IMAGE_DOS_HEADER* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(buffer);
+	if (dos->e_magic != IMAGE_DOS_SIGNATURE)
+		return L"Unknown";
 
-    LONG peOffset = dos->e_lfanew;
-    if (peOffset <= 0 || peOffset > (LONG)(bytesRead - sizeof(IMAGE_NT_HEADERS)))
-        return L"Unknown";
+	LONG peOffset = dos->e_lfanew;
+	if (peOffset <= 0 || peOffset > (LONG)(bytesRead - sizeof(IMAGE_NT_HEADERS)))
+		return L"Unknown";
 
-    const DWORD peSignature = *reinterpret_cast<const DWORD*>(buffer + peOffset);
-    if (peSignature != IMAGE_NT_SIGNATURE)
-        return L"Unknown";
+	const DWORD peSignature = *reinterpret_cast<const DWORD*>(buffer + peOffset);
+	if (peSignature != IMAGE_NT_SIGNATURE)
+		return L"Unknown";
 
-    const IMAGE_FILE_HEADER* fileHeader = reinterpret_cast<const IMAGE_FILE_HEADER*>(
-        buffer + peOffset + sizeof(DWORD));
+	const IMAGE_FILE_HEADER* fileHeader = reinterpret_cast<const IMAGE_FILE_HEADER*>(
+		buffer + peOffset + sizeof(DWORD));
 
-    switch (fileHeader->Machine)
-    {
-    case IMAGE_FILE_MACHINE_I386:  return L"32-bit";
-    case IMAGE_FILE_MACHINE_AMD64: return L"64-bit";
-    case IMAGE_FILE_MACHINE_ARM64: return L"ARM64";
-    case IMAGE_FILE_MACHINE_ARM:   return L"ARM";
-    default:                       return L"Unknown";
-    }
+	switch (fileHeader->Machine)
+	{
+	case IMAGE_FILE_MACHINE_I386:  return L"32-bit";
+	case IMAGE_FILE_MACHINE_AMD64: return L"64-bit";
+	case IMAGE_FILE_MACHINE_ARM64: return L"ARM64";
+	case IMAGE_FILE_MACHINE_ARM:   return L"ARM";
+	default:                       return L"Unknown";
+	}
 }
 
 // -----------------------------------------------------------------------------
@@ -446,82 +441,82 @@ static std::wstring GetPEBitnessFromFile(const std::wstring& path)
 // -----------------------------------------------------------------------------
 struct VersionInfoBlob
 {
-    std::vector<BYTE> buf;
-    std::vector<std::pair<WORD, WORD>> translations; // (lang, codepage)
+	std::vector<BYTE> buf;
+	std::vector<std::pair<WORD, WORD>> translations; // (lang, codepage)
 };
 
 static bool LoadVersionInfoBlob(const std::wstring& path, VersionInfoBlob& out)
 {
-    out = {};
-    DWORD handle = 0;
-    DWORD sz = GetFileVersionInfoSizeW(path.c_str(), &handle);
-    if (sz == 0) return false;
+	out = {};
+	DWORD handle = 0;
+	DWORD sz = GetFileVersionInfoSizeW(path.c_str(), &handle);
+	if (sz == 0) return false;
 
-    out.buf.resize(sz);
-    if (!GetFileVersionInfoW(path.c_str(), 0, sz, out.buf.data()))
-        return false;
+	out.buf.resize(sz);
+	if (!GetFileVersionInfoW(path.c_str(), 0, sz, out.buf.data()))
+		return false;
 
-    struct LANGANDCODEPAGE { WORD wLanguage; WORD wCodePage; };
-    LANGANDCODEPAGE* lpTranslate = nullptr;
-    UINT cbTranslate = 0;
+	struct LANGANDCODEPAGE { WORD wLanguage; WORD wCodePage; };
+	LANGANDCODEPAGE* lpTranslate = nullptr;
+	UINT cbTranslate = 0;
 
-    if (VerQueryValueW(out.buf.data(), L"\\VarFileInfo\\Translation",
-        reinterpret_cast<void**>(&lpTranslate), &cbTranslate) && lpTranslate && cbTranslate >= sizeof(LANGANDCODEPAGE))
-    {
-        const int count = (int)(cbTranslate / sizeof(LANGANDCODEPAGE));
-        for (int i = 0; i < count; i++)
-            out.translations.push_back({ lpTranslate[i].wLanguage, lpTranslate[i].wCodePage });
-    }
+	if (VerQueryValueW(out.buf.data(), L"\\VarFileInfo\\Translation",
+		reinterpret_cast<void**>(&lpTranslate), &cbTranslate) && lpTranslate && cbTranslate >= sizeof(LANGANDCODEPAGE))
+	{
+		const int count = (int)(cbTranslate / sizeof(LANGANDCODEPAGE));
+		for (int i = 0; i < count; i++)
+			out.translations.push_back({ lpTranslate[i].wLanguage, lpTranslate[i].wCodePage });
+	}
 
-    if (out.translations.empty())
-        out.translations.push_back({ 0x0409, 1200 });
+	if (out.translations.empty())
+		out.translations.push_back({ 0x0409, 1200 });
 
-    return true;
+	return true;
 }
 
 static std::wstring QueryVersionString(const VersionInfoBlob& vi, const wchar_t* key)
 {
-    if (vi.buf.empty() || !key) return L"";
+	if (vi.buf.empty() || !key) return L"";
 
-    for (const auto& tr : vi.translations)
-    {
-        wchar_t subblock[128];
-        swprintf_s(subblock, L"\\StringFileInfo\\%04x%04x\\%s", tr.first, tr.second, key);
+	for (const auto& tr : vi.translations)
+	{
+		wchar_t subblock[128];
+		swprintf_s(subblock, L"\\StringFileInfo\\%04x%04x\\%s", tr.first, tr.second, key);
 
-        LPWSTR value = nullptr;
-        UINT len = 0;
-        if (VerQueryValueW((void*)vi.buf.data(), subblock, reinterpret_cast<void**>(&value), &len) && value && len > 0)
-            return std::wstring(value);
-    }
+		LPWSTR value = nullptr;
+		UINT len = 0;
+		if (VerQueryValueW((void*)vi.buf.data(), subblock, reinterpret_cast<void**>(&value), &len) && value && len > 0)
+			return std::wstring(value);
+	}
 
-    // common explicit fallback 040904B0
-    {
-        wchar_t subblock[128];
-        swprintf_s(subblock, L"\\StringFileInfo\\040904B0\\%s", key);
-        LPWSTR value = nullptr;
-        UINT len = 0;
-        if (VerQueryValueW((void*)vi.buf.data(), subblock, reinterpret_cast<void**>(&value), &len) && value && len > 0)
-            return std::wstring(value);
-    }
+	// common explicit fallback 040904B0
+	{
+		wchar_t subblock[128];
+		swprintf_s(subblock, L"\\StringFileInfo\\040904B0\\%s", key);
+		LPWSTR value = nullptr;
+		UINT len = 0;
+		if (VerQueryValueW((void*)vi.buf.data(), subblock, reinterpret_cast<void**>(&value), &len) && value && len > 0)
+			return std::wstring(value);
+	}
 
-    return L"";
+	return L"";
 }
 
 static std::wstring QueryFixedFileVersion(const VersionInfoBlob& vi)
 {
-    if (vi.buf.empty()) return L"";
-    VS_FIXEDFILEINFO* ffi = nullptr;
-    UINT ffiLen = 0;
-    if (!VerQueryValueW((void*)vi.buf.data(), L"\\", reinterpret_cast<void**>(&ffi), &ffiLen) ||
-        !ffi || ffiLen < sizeof(VS_FIXEDFILEINFO))
-        return L"";
+	if (vi.buf.empty()) return L"";
+	VS_FIXEDFILEINFO* ffi = nullptr;
+	UINT ffiLen = 0;
+	if (!VerQueryValueW((void*)vi.buf.data(), L"\\", reinterpret_cast<void**>(&ffi), &ffiLen) ||
+		!ffi || ffiLen < sizeof(VS_FIXEDFILEINFO))
+		return L"";
 
-    std::wstringstream ss;
-    ss << HIWORD(ffi->dwFileVersionMS) << L"."
-        << LOWORD(ffi->dwFileVersionMS) << L"."
-        << HIWORD(ffi->dwFileVersionLS) << L"."
-        << LOWORD(ffi->dwFileVersionLS);
-    return ss.str();
+	std::wstringstream ss;
+	ss << HIWORD(ffi->dwFileVersionMS) << L"."
+		<< LOWORD(ffi->dwFileVersionMS) << L"."
+		<< HIWORD(ffi->dwFileVersionLS) << L"."
+		<< LOWORD(ffi->dwFileVersionLS);
+	return ss.str();
 }
 
 static std::wstring FirstSentenceOrTruncate(const std::wstring& s, size_t hardMax = 140)
@@ -546,7 +541,7 @@ static std::wstring FirstSentenceOrTruncate(const std::wstring& s, size_t hardMa
 	size_t cut = hardMax;
 	while (cut > 0 && s[cut - 1] != L' ' && s[cut - 1] != L'\t') cut--;
 	if (cut < 20) cut = hardMax; // avoid over-short
-	return s.substr(0, cut) + L"…";
+	return s.substr(0, cut) + L"â€¦";
 }
 
 static std::wstring HtmlTrim(std::wstring s)
@@ -611,27 +606,27 @@ struct SmallRange { UINT32 start; UINT32 length; };
 
 static std::wstring ExpandTokens(std::wstring templ, const std::map<std::wstring, std::wstring>& kv)
 {
-    for (const auto& it : kv)
-    {
-        std::wstring token = L"$(" + it.first + L")";
-        size_t pos = 0;
-        while ((pos = templ.find(token, pos)) != std::wstring::npos)
-        {
-            templ.replace(pos, token.size(), it.second);
-            pos += it.second.size();
-        }
-    }
-    return templ;
+	for (const auto& it : kv)
+	{
+		std::wstring token = L"$(" + it.first + L")";
+		size_t pos = 0;
+		while ((pos = templ.find(token, pos)) != std::wstring::npos)
+		{
+			templ.replace(pos, token.size(), it.second);
+			pos += it.second.size();
+		}
+	}
+	return templ;
 }
 
 static void NormalizeNewlinesInPlace(std::wstring& s)
 {
-    for (;;)
-    {
-        size_t pos = s.find(L"\r\n\r\n\r\n");
-        if (pos == std::wstring::npos) break;
-        s.erase(pos, 2);
-    }
+	for (;;)
+	{
+		size_t pos = s.find(L"\r\n\r\n\r\n");
+		if (pos == std::wstring::npos) break;
+		s.erase(pos, 2);
+	}
 }
 
 
@@ -928,7 +923,7 @@ static BuildFlavor DetectBuildFlavor(const std::wstring& path)
 	if (scoreDebug >= 20) return BuildFlavor::Debug;
 	if (scoreTest >= 40) return BuildFlavor::Test;
 
-	// If we have some evidence it’s a normal build
+	// If we have some evidence itâ€™s a normal build
 	if (hasVI || !pdb.empty())
 		return BuildFlavor::Release;
 
@@ -995,7 +990,8 @@ static void DrawBuildStrip(
 	float stripH,
 	const std::wstring& label,
 	const D2D1_COLOR_F& stripColor,
-	float cornerRadius) 
+	float cornerRadius,
+	float uiScale)
 {
 	if (!rt || !dw) return;
 	if (label.empty()) return;
@@ -1004,6 +1000,7 @@ static void DrawBuildStrip(
 	const float plateW = plateRect.right - plateRect.left;
 	if (plateH <= 1.0f || plateW <= 1.0f) return;
 
+	uiScale = std::clamp(uiScale, 0.25f, 8.0f);
 	stripH = std::clamp(stripH, 1.0f, plateH);
 
 	// Limit radius to something sane
@@ -1055,7 +1052,7 @@ static void DrawBuildStrip(
 		DWRITE_FONT_WEIGHT_SEMI_BOLD,
 		DWRITE_FONT_STYLE_NORMAL,
 		DWRITE_FONT_STRETCH_NORMAL,
-		std::clamp(stripH * 0.60f, 9.f, 22.f),
+		std::clamp(stripH * 0.60f, 9.f * uiScale, 22.f * uiScale),
 		L"en-us",
 		&fmt);
 
@@ -1081,11 +1078,12 @@ static void DrawBuildStrip(
 	const D2D1_RECT_F& plateRect,
 	float stripH,
 	const std::wstring& label,
-	const D2D1_COLOR_F& stripColor)
+	const D2D1_COLOR_F& stripColor,
+	float uiScale)
 {
 	const float plateH = plateRect.bottom - plateRect.top;
-	float guessedRadius = std::clamp(plateH * 0.10f, 4.f, 14.f); // similar feel to your plate radius
-	DrawBuildStrip(rt, dw, plateRect, stripH, label, stripColor, guessedRadius);
+	float guessedRadius = std::clamp(plateH * 0.10f, 4.f * uiScale, 14.f * uiScale); // similar feel to your plate radius
+	DrawBuildStrip(rt, dw, plateRect, stripH, label, stripColor, guessedRadius, uiScale);
 }
 
 
@@ -1102,7 +1100,7 @@ static void DrawChipPins(
 	int pinsPerSide,
 	ID2D1Brush* brush,
 	const D2D1_RECT_F& keepOut,
-	float cornerInset)   
+	float cornerInset)
 {
 	if (!rt || !brush || pinsPerSide <= 0) return;
 
@@ -1167,10 +1165,12 @@ static void DrawBitnessBadge(
 	bool diamond,
 	float sizePx,
 	float marginPx,
-	const D2D1_COLOR_F& fillColor)
+	const D2D1_COLOR_F& fillColor,
+	float uiScale)
 {
 	if (!rt || !dw) return;
 
+	const float S = std::clamp(uiScale, 0.25f, 8.0f);
 	const float s = sizePx;
 	const float x0 = W - marginPx - s;
 	const float y0 = marginPx;
@@ -1186,11 +1186,13 @@ static void DrawBitnessBadge(
 	rt->CreateSolidColorBrush(D2D1::ColorF(1.f, 1.f, 1.f, 0.25f), &stroke);
 	rt->CreateSolidColorBrush(D2D1::ColorF(1.f, 1.f, 1.f, 1.0f), &textBrush);
 
+	const float strokeW = std::clamp(0.75f * S, 1.0f, 3.0f);
+
 	if (!diamond)
 	{
 		D2D1_ELLIPSE e = D2D1::Ellipse(D2D1::Point2F(x0 + s * 0.5f, y0 + s * 0.5f), s * 0.5f, s * 0.5f);
 		rt->FillEllipse(e, fill);
-		rt->DrawEllipse(e, stroke, 1.0f);
+		rt->DrawEllipse(e, stroke, strokeW);
 	}
 	else
 	{
@@ -1210,12 +1212,12 @@ static void DrawBitnessBadge(
 			sink->Close();
 
 			rt->FillGeometry(geo, fill);
-			rt->DrawGeometry(geo, stroke, 1.0f);
+			rt->DrawGeometry(geo, stroke, strokeW);
 		}
 	}
 
 	// Text in badge
-	float badgeFontSize = std::clamp(s * 0.42f, 9.f, 20.f);
+	float badgeFontSize = std::clamp(s * 0.42f, 9.f, 20.f * S);
 
 	CComPtr<IDWriteTextFormat> fmt;
 	dw->CreateTextFormat(
@@ -1236,9 +1238,13 @@ static void DrawBitnessBadge(
 
 static void DrawCatalogShield(
 	ID2D1RenderTarget* rt,
-	float x, float y, float s)
+	float x, float y, float s,
+	float uiScale)
 {
 	if (!rt || !g_d2d) return;
+
+	const float S = std::clamp(uiScale, 0.25f, 8.0f);
+	const float strokeW = std::clamp(0.75f * S, 1.0f, 3.0f);
 
 	// Shield geometry (same as before)
 	CComPtr<ID2D1PathGeometry> geo;
@@ -1280,7 +1286,7 @@ static void DrawCatalogShield(
 	rt->CreateSolidColorBrush(D2D1::ColorF(1.f, 1.f, 1.f, 0.28f), &stroke);
 
 	rt->FillGeometry(geo, fill);
-	if (stroke) rt->DrawGeometry(geo, stroke, 1.0f);
+	if (stroke) rt->DrawGeometry(geo, stroke, strokeW);
 
 	// Small "folder tab" cue (simple rounded rect) in top-left area of the shield
 	CComPtr<ID2D1SolidColorBrush> tab;
@@ -1295,9 +1301,13 @@ static void DrawCatalogShield(
 
 static void DrawDigitalSignedShield(
 	ID2D1RenderTarget* rt,
-	float x, float y, float s) // top-left + size
+	float x, float y, float s,
+	float uiScale) // top-left + size
 {
 	if (!rt || !g_d2d) return;
+
+	const float S = std::clamp(uiScale, 0.25f, 8.0f);
+	const float strokeW = std::clamp(0.75f * S, 1.0f, 3.0f);
 
 	CComPtr<ID2D1PathGeometry> geo;
 	if (FAILED(g_d2d->CreatePathGeometry(&geo)) || !geo) return;
@@ -1347,7 +1357,7 @@ static void DrawDigitalSignedShield(
 
 	// Fill + outline
 	rt->FillGeometry(geo, fill);
-	if (stroke) rt->DrawGeometry(geo, stroke, 1.0f);
+	if (stroke) rt->DrawGeometry(geo, stroke, strokeW);
 
 	// Optional: subtle inner highlight line down the center (adds "life")
 	// Comment out if you want it flatter.
@@ -1359,24 +1369,28 @@ static void DrawDigitalSignedShield(
 			D2D1::Point2F(x + s * 0.50f, y + s * 0.18f),
 			D2D1::Point2F(x + s * 0.50f, y + s * 0.82f),
 			highlight,
-			1.0f);
+			strokeW);
 	}
 }
 
 // -----------------------------------------------------------------------------
 // Plugin class
 // -----------------------------------------------------------------------------
-class CVCDLLPlugin : public IMysticThumbsPlugin
+class CDLLPlugin : public IMysticThumbsPlugin
 {
-public:
+private:
+	MysticLogTag  m_logTag;
+
 	// Valid for lifetime through the lifetime of the plugin instance until the end of Destroy
 	IMysticThumbsPluginContext* m_context{};
 	const IMysticThumbsLog* m_log{};
 
+	// UI scale factor used to keep QuickView resizing visually consistent (baseline 256px)
+	float m_scale = 1.0f;
+
 	struct PluginConfig
 	{
-		IMysticThumbsPluginContext* context{};
-		LogConfigCommon log{};
+		IMysticThumbsPluginContext* context;
 
 		std::wstring templ = DEFAULT_TEMPLATE;
 		DWORD plateOpacity = 55;
@@ -1384,692 +1398,746 @@ public:
 		DWORD labelScalePct = 75;
 
 		PluginConfig() = default;
-		explicit PluginConfig(CVCDLLPlugin* p) : context(p ? p->m_context : nullptr) {}
+		explicit PluginConfig(CDLLPlugin* p) : context(p ? p->m_context : nullptr) {}
 
-		void Load(bool dumpToLog)
+		void Load()
 		{
 			ATLASSUME(context);
 
-            CRegKeyHelper reg;
-            if(ERROR_SUCCESS != reg.Open(context->GetPluginRegistryRootKey(), REG_SETTINGS_KEY))
-                return;
-			DWORD v{};
+			HKEY hRoot = context ? context->GetPluginRegistryRootKey() : nullptr;
+			if (!hRoot)
+				return;
 
-            reg.QueryDWORDValue(REG_LOG_ENABLED, log.enabled);
-            reg.QueryDWORDValue(REG_LOG_INCLUDE_CRC, log.includeCRC);
-			reg.QueryStringValue(REG_LOG_FILENAME, log.fileName);
+			// IMPORTANT: Do not close MysticThumbs' HKEY. 
+			CRegKeyHelper<false> root(hRoot);
+			DWORD d = 0;
 
-			reg.QueryStringValue(REG_TEMPLATE, templ, DEFAULT_TEMPLATE);
+			// Template
+			(void)root.QueryStringValue(REG_TEMPLATE, templ);
+			if (templ.empty())
+				templ = DEFAULT_TEMPLATE;
 
+			// Plate opacity
 			plateOpacity = 55;
-			if(ERROR_SUCCESS == reg.QueryDWORDValue(REG_PLATE_OPACITY, plateOpacity))
-	            plateOpacity = std::clamp(plateOpacity, 0UL, 100UL);
+			DWORD v{};
+			if (root.QueryDWORDValue(REG_PLATE_OPACITY, v) == ERROR_SUCCESS)
+				plateOpacity = std::clamp(v, 0UL, 100UL);
 
+			// Plate opaque
 			plateOpaque = false;
-			if(ERROR_SUCCESS == reg.QueryDWORDValue(REG_PLATE_OPAQUE, v))
-                plateOpaque = !!v;
+			v = 0;
+			if (root.QueryDWORDValue(REG_PLATE_OPAQUE, v) == ERROR_SUCCESS)
+				plateOpaque = (v != 0);
 
+			// Label scale
 			labelScalePct = 75;
-			if(ERROR_SUCCESS == reg.QueryDWORDValue(REG_LABEL_SCALE, v))
-				labelScalePct = std::clamp(plateOpacity, 50UL, 100UL);
-
-			if (dumpToLog && log.enabled)
-			{
-				LogSessionHeader(g_hModule, &log, kBitness);
-				LogMessage(L"  TemplateLen=" + std::to_wstring(templ.size()));
-				LogMessage(L"  PlateOpacity=" + std::to_wstring(plateOpacity));
-				LogMessage(L"  PlateOpaque=" + std::to_wstring(plateOpaque ? 1 : 0));
-				LogMessage(L"  LabelScalePct=" + std::to_wstring(labelScalePct));
-			}
+			v = 0;
+			if (root.QueryDWORDValue(REG_LABEL_SCALE, v) == ERROR_SUCCESS)
+				labelScalePct = std::clamp(v, 50UL, 100UL);
 		}
 
-		void Save() const
+		void Save(HWND hDlg) const
 		{
-            ATLASSUME(context);
+			ATLASSUME(context);
 
-            CRegKeyHelper reg;
-            if(ERROR_SUCCESS != reg.Open(context->GetPluginRegistryRootKey(), REG_SETTINGS_KEY))
-                return;
+			HKEY hRoot = context ? context->GetPluginRegistryRootKey() : nullptr;
+			if (!hRoot)
+				return;
 
-			if(templ.empty()) reg.DeleteValue(REG_TEMPLATE);
-			else reg.SetStringValue(REG_TEMPLATE, templ.c_str());
-			reg.SetDWORDValue(REG_PLATE_OPACITY, plateOpacity);
-			reg.SetDWORDValue(REG_PLATE_OPAQUE, plateOpaque ? 1UL : 0UL);
-			reg.SetDWORDValue(REG_LABEL_SCALE, labelScalePct);
+			CRegKeyHelper<false> root(hRoot);
+
+			(void)root.SetStringValue(REG_TEMPLATE, templ.c_str());
+
+			(void)root.SetDWORDValue(REG_PLATE_OPACITY, plateOpacity);
+			(void)root.SetDWORDValue(REG_PLATE_OPAQUE, plateOpaque ? 1UL : 0UL);
+			(void)root.SetDWORDValue(REG_LABEL_SCALE, labelScalePct);
 		}
 	} config;
-	HWND hDlg{}; // configure dialog for sneaky
 
-	explicit CVCDLLPlugin(_In_ IMysticThumbsPluginContext* context)
+	static INT_PTR CALLBACK ConfigureDialogProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+
+public:
+	explicit CDLLPlugin(_In_ IMysticThumbsPluginContext* context)
 		: m_context(context), config(this)
 	{
 		m_log = context->Log();
 	}
 
-    void Destroy() override
-    {
-        this->~CVCDLLPlugin();
-        CoTaskMemFree(this);
-    }
-
-    _Notnull_ LPCWSTR GetName() const override { return s_name; }
-    _Notnull_ LPCGUID GetGuid() const override { return &s_guid; }
-    _Notnull_ LPCWSTR GetDescription() const override { return s_description; }
-    _Notnull_ LPCWSTR GetAuthor() const override { return s_author; }
-
-    unsigned int GetExtensionCount() const override { return (unsigned int)_countof(s_extensions); }
-    _Notnull_ LPCWSTR GetExtension(unsigned int index) const override
-    {
-        if (index >= _countof(s_extensions)) return L"";
-        return s_extensions[index];
-    }
-
-    bool Ping(_Inout_ MysticThumbsPluginPing& ping) override
-    {
-        config.context = m_context; 
-        config.Load(true);
-
-        BindLogConfig(&config.log);
-        ClearLogContext();
-
-        unsigned int w = ping.requestedWidth ? ping.requestedWidth : 256;
-        unsigned int h = ping.requestedHeight ? ping.requestedHeight : 256;
-        ping.width = w;
-        ping.height = h;
-        ping.bitDepth = 32;
-        return true;
-    } 
-
-    bool GetCapabilities(_Out_ MysticThumbsPluginCapabilities& capabilities) override
-    {
-        capabilities = {};
-        capabilities |= PluginCapabilities_CanConfigure | PluginCapabilities_IsProcedural;
-        return true;
-    }
-
-    // ---- Configure dialog ----
-
-    void ApplyDialogToConfig(PluginConfig& newCfg) const
-    {
-        newCfg = config;
-        newCfg.templ = GetText(hDlg, IDC_DLL_TEMPLATE_EDIT);
-        DWORD w = GetUInt(hDlg, IDC_DLL_PLATE_OPACITY_EDIT, config.plateOpacity);
-        newCfg.plateOpacity = std::clamp(w, 0UL, 100UL);
-        newCfg.plateOpaque = GetCheck(hDlg, IDC_DLL_PLATE_OPAQUE);
-        w = GetUInt(hDlg, IDC_DLL_LABEL_SCALE_EDIT, config.labelScalePct);
-        newCfg.labelScalePct = std::clamp(w, 50UL, 100UL);
-    }
-
-    static bool ConfigDifferent(const PluginConfig& a, const PluginConfig& b)
-    {
-        return a.templ != b.templ ||
-			a.plateOpacity != b.plateOpacity ||
-			a.plateOpaque != b.plateOpaque ||
-			a.labelScalePct != b.labelScalePct;
-    }
-
-	bool HasConfigChanged(bool saveIfChanged)
+	void Destroy() override
 	{
-		PluginConfig newCfg;
-		ApplyDialogToConfig(newCfg);
-		bool hasChanged = ConfigDifferent(config, newCfg);
-		if(hasChanged && saveIfChanged) {
-            config = newCfg;
-            config.Save();
-		}
-		return hasChanged;
+		this->~CDLLPlugin();
+		CoTaskMemFree(this);
 	}
 
-	void SetDialogOKCancel()
+	_Notnull_ LPCWSTR GetName() const override { return s_name; }
+	_Notnull_ LPCGUID GetGuid() const override { return &s_guid; }
+	_Notnull_ LPCWSTR GetDescription() const override { return s_description; }
+	_Notnull_ LPCWSTR GetAuthor() const override { return s_author; }
+
+	unsigned int GetExtensionCount() const override { return (unsigned int)_countof(s_extensions); }
+	_Notnull_ LPCWSTR GetExtension(unsigned int index) const override
 	{
-		BOOL changed = HasConfigChanged(false) ? TRUE : FALSE;
-        EnableWindow(GetDlgItem(hDlg, IDOK), changed);
+		if (index >= _countof(s_extensions)) return L"";
+		return s_extensions[index];
 	}
 
-    static INT_PTR CALLBACK DllConfigureDialogProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
-    {
-		// only not valid in WM_INITDIALOG
-        auto* plugin = reinterpret_cast<CVCDLLPlugin*>(GetWindowLongPtrW(hDlg, GWLP_USERDATA));
+	bool Ping(_Inout_ MysticThumbsPluginPing& ping) override
+	{
+		config.context = m_context;
+		config.Load();
 
-        switch(msg) {
-            case WM_INITDIALOG:
-            {
-                plugin = reinterpret_cast<CVCDLLPlugin*>(lParam);
-                if(!plugin) return FALSE;
+		const unsigned int pingSizeHint = (ping.requestedWidth && ping.requestedHeight) ? std::max(1u, std::max(ping.requestedWidth, ping.requestedHeight)) : 0u;
+		m_logTag.UpdateFromStream(m_context ? m_context->GetStream() : nullptr, pingSizeHint);
 
-                SetWindowLongPtrW(hDlg, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(plugin)); // this makes more sense to me
-				plugin->hDlg = hDlg; // useful when using the class object for reflection
+		IStream* pStream = m_context ? m_context->GetStream() : nullptr;
+		if (!pStream)
+			m_log->logf(L"%sPing: context stream is null", m_logTag.Tag());
 
-                plugin->config.context = plugin->m_context;
-                plugin->config.Load(false);
+		m_log->logf(L"%sPing (DLL): File \"%s\"", m_logTag.Tag(), m_logTag.Name());
 
-                const auto& c = plugin->config;
-                SetText(hDlg, IDC_DLL_TEMPLATE_EDIT, c.templ);
-				// prevent the highlighting madness
-                SendMessageW(GetDlgItem(hDlg, IDC_DLL_TEMPLATE_EDIT), EM_SETSEL, -1, -1);
+		unsigned int w = pingSizeHint ? pingSizeHint : 256;
+		unsigned int h = w;
 
-                SetUInt(hDlg, IDC_DLL_PLATE_OPACITY_EDIT, c.plateOpacity);
-                SetCheck(hDlg, IDC_DLL_PLATE_OPAQUE, c.plateOpaque);
-                EnableWindow(GetDlgItem(hDlg, IDC_DLL_PLATE_OPAQUE), FALSE); // see redundancy comment on plateOpaque
-                SetUInt(hDlg, IDC_DLL_LABEL_SCALE_EDIT, c.labelScalePct);
-                EnableWindow(GetDlgItem(hDlg, IDOK), FALSE);
+		// Baseline visuals are tuned for ~256px thumbnails. QuickView can resize the preview window,
+		// so we track a scale factor and apply it to capped UI elements (fonts, pins, badges, shields).
+		m_scale = (w > 0) ? (float)w / 256.0f : 1.0f;
+		m_scale = std::clamp(m_scale, 0.25f, 8.0f);
 
-				SetFocus((HWND)wParam); // shouldn't need this but something (dark mode stuff?) is setting the IDC_DLL_TEMPLATE_EDIT control
-                return FALSE;
-            }
-			case WM_COMMAND:
+		ping.width = w;
+		ping.height = h;
+		ping.bitDepth = 32;
+		return true;
+	}
+
+	bool GetCapabilities(_Out_ MysticThumbsPluginCapabilities& capabilities) override
+	{
+		capabilities = {};
+		capabilities |= PluginCapabilities_CanConfigure | PluginCapabilities_IsProcedural;
+		return true;
+	}
+
+	bool Configure(_In_ HWND hWndParent) override
+	{
+		INT_PTR result = DialogBoxParamW(
+			g_hModule,
+			MAKEINTRESOURCE(IDD_DLL_PLUGIN_CONFIGURE),
+			hWndParent,
+			ConfigureDialogProc,
+			(LPARAM)this);
+		return result == IDOK;
+	}
+
+	// ---- Rendering ----
+	static HRESULT RenderTextThumb(
+		const PluginConfig& cfg,
+		IWICBitmap* bmp,
+		MysticThumbsPluginGenerateParams& params,
+		const std::wstring& fullText,
+		const std::wstring& bitness,
+		BuildFlavor flavor,
+		const SigKind sigKind,
+		float uiScale)
+	{
+		if (!bmp || !g_d2d || !g_dw) return E_INVALIDARG;
+
+		const float W = (float)params.desiredWidth;
+		const float H = (float)params.desiredHeight;
+
+		const float S = std::clamp(uiScale, 0.25f, 8.0f);
+
+		if (!(W > 0.f) || !(H > 0.f))
+			return E_INVALIDARG;
+
+
+		auto clamp_nonneg = [](float v) -> float { return (v < 0.f) ? 0.f : v; };
+
+		// Scale down geometry on small thumbnails so padding/margins don't dominate.
+		const float minDim = std::min(W, H);
+		const float s = std::clamp(minDim / 128.f, 0.25f, 1.0f);
+
+		// ---- Markup parsing -----------------------------------------------------
+
+		struct LineRun
+		{
+			std::wstring text;
+			bool center = false;
+			bool strong = false;
+			enum class SizeTag { Normal, Small, Tiny } size = SizeTag::Normal;
+		};
+
+		auto ParseLines = [&](const std::wstring& markup) -> std::vector<LineRun>
 			{
-                ATLASSERT(plugin);
+				std::vector<LineRun> out;
+				size_t start = 0;
+				while (start <= markup.size())
+				{
+					size_t end = markup.find(L"\r\n", start);
+					std::wstring line = (end == std::wstring::npos)
+						? markup.substr(start)
+						: markup.substr(start, end - start);
+					start = (end == std::wstring::npos) ? markup.size() + 1 : end + 2;
 
-                if(lParam) { // from a control
-					//auto notificationCode = HIWORD(wParam);
-					//if(notificationCode == BN_CLICKED) // etc. for various control types if really wanted
-					plugin->m_log->log(L"Calling SetDialogOKCancel()");
-					plugin->SetDialogOKCancel();
-				}
+					line = HtmlTrim(line);
+					if (line.empty()) continue;
 
-				switch(LOWORD(wParam)) {
-					case IDOK:
+					LineRun lr;
+					lr.text = line;
+
+					bool changed = true;
+					while (changed)
 					{
-						if(plugin) {
-							if(plugin->HasConfigChanged(true)) {
-								// IM: 2026-02-23 I don't really think this *should be* required.
-								// Changing the settings should be instantaneous and used by any new instance created to create a thumbnail.
-								// This is why it's important to not cache the settings. Each new instance should be reading the registry for whatever value it needs, when it needs it.
-								// - Also why using the context/log should be used as as nothing needs setting up / read from the registry for that.
-								//MessageBoxW(hDlg,
-								//    L"DLL plugin settings saved to the registry.\r\n\r\n"
-								//    L"MysticThumbs/Explorer may need to be restarted before all new thumbnails use the updated settings.",
-								//    L"Voith's CODE DLL Plugin", MB_OK | MB_ICONINFORMATION);
-							}
-						}
-						EndDialog(hDlg, IDOK);
-						return TRUE;
+						changed = false;
+						if (StripTagPair(lr.text, L"<center>", L"</center>")) { lr.center = true; changed = true; }
+						if (StripTagPair(lr.text, L"<strong>", L"</strong>")) { lr.strong = true; changed = true; }
+						if (StripTagPair(lr.text, L"<small>", L"</small>")) { lr.size = LineRun::SizeTag::Small; changed = true; }
+						if (StripTagPair(lr.text, L"<tiny>", L"</tiny>")) { lr.size = LineRun::SizeTag::Tiny;  changed = true; }
+						lr.text = HtmlTrim(lr.text);
 					}
-					case IDCANCEL:
-						EndDialog(hDlg, IDCANCEL);
-						return TRUE;
+
+					out.push_back(lr);
 				}
-				break;
+				return out;
+			};
+
+		// ---- Flavor label + color ----------------------------------------------
+
+		auto FlavorLabel = [](BuildFlavor f) -> const wchar_t*
+			{
+				switch (f)
+				{
+				case BuildFlavor::Debug:   return L"Debug";
+				case BuildFlavor::Test:    return L"Test";
+				case BuildFlavor::Release: return L"Release";
+				default:                   return L"";
+				}
+			};
+
+		auto ColorFromRGB = [](unsigned rgb, float a) -> D2D1_COLOR_F
+			{
+				float r = ((rgb >> 16) & 0xFF) / 255.0f;
+				float g = ((rgb >> 8) & 0xFF) / 255.0f;
+				float b = ((rgb) & 0xFF) / 255.0f;
+				return D2D1::ColorF(r, g, b, a);
+			};
+
+		auto FlavorColor = [&](BuildFlavor f) -> D2D1_COLOR_F
+			{
+				switch (f)
+				{
+				case BuildFlavor::Debug:   return ColorFromRGB(0xFF3B30, 1.0f);
+				case BuildFlavor::Test:    return ColorFromRGB(0xFFD60A, 1.0f);
+				case BuildFlavor::Release: return ColorFromRGB(0x34C759, 1.0f);
+				default:                   return ColorFromRGB(0x9E9E9E, 1.0f);
+				}
+			};
+
+		const wchar_t* flavorText = FlavorLabel(flavor);
+		const D2D1_COLOR_F flavorColor = FlavorColor(flavor);
+		bool showStrip = (flavor == BuildFlavor::Debug || flavor == BuildFlavor::Test || flavor == BuildFlavor::Release);
+		if (flavor == BuildFlavor::Unknown) showStrip = false;
+
+		// Parse lines
+		std::vector<LineRun> lines = ParseLines(fullText);
+		if (lines.empty())
+		{
+			LineRun lr;
+			lr.text = L"(no text)";
+			lines.push_back(lr);
+		}
+
+		// ---- Render target ------------------------------------------------------
+
+		CComPtr<ID2D1RenderTarget> rt;
+		D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
+			D2D1_RENDER_TARGET_TYPE_DEFAULT,
+			D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+
+		HRESULT hr = g_d2d->CreateWicBitmapRenderTarget(bmp, props, &rt);
+		if (FAILED(hr)) return hr;
+
+		// NOTE: keep your existing semantics
+		auto plateOpaque = !!(params.flags & MT_Transparency_Transparent);
+
+		rt->SetTextAntialiasMode(plateOpaque
+			? D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE
+			: D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
+
+		// Brushes
+		const float plateAlpha = plateOpaque ? 1.0f : std::clamp(cfg.plateOpacity / 100.f, 0.f, 1.f);
+		D2D1_COLOR_F plateColor = D2D1::ColorF(0.16f, 0.16f, 0.16f, plateAlpha);
+		D2D1_COLOR_F accent = GetBitnessAccentColor(bitness, 1.0f);
+
+		CComPtr<ID2D1SolidColorBrush> plateBrush;
+		CComPtr<ID2D1SolidColorBrush> textBrush;
+		CComPtr<ID2D1SolidColorBrush> accentBrush;
+
+		rt->CreateSolidColorBrush(plateColor, &plateBrush);
+		rt->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White, 1.f), &textBrush);
+		rt->CreateSolidColorBrush(accent, &accentBrush);
+
+		// ---- Geometry constants (scaled) ---------------------------------------
+
+		float outerMargin = 6.f * s;
+		float padX = 9.f * s;
+		float padY = 5.f * s;
+
+		// Cap margins/padding so they cannot exceed a sensible fraction of the size.
+		outerMargin = std::min(outerMargin, minDim * 0.25f);
+		padX = std::min(padX, minDim * 0.35f);
+		padY = std::min(padY, minDim * 0.35f);
+
+		const float maxPlateW = clamp_nonneg(W - outerMargin * 2.f);
+		const float maxPlateH = clamp_nonneg(H - outerMargin * 2.f);
+
+		// If there is effectively no drawable area, just clear and exit successfully.
+		// (Prevents downstream geometry weirdness.)
+		if (maxPlateW < 1.f || maxPlateH < 1.f)
+		{
+			rt->BeginDraw();
+			rt->Clear(D2D1::ColorF(0, 0, 0, 0));
+			hr = rt->EndDraw();
+			return hr;
+		}
+
+		float plateW = 0.f;
+		{
+			const float preferred = W * 0.84f;
+			const float minPlateW = std::min(60.f, maxPlateW);
+			plateW = std::clamp(preferred, minPlateW, maxPlateW);
+		}
+
+		float stripReserve = 0.0f;
+		if (showStrip && flavorText && *flavorText)
+		{
+			float pct = (flavor == BuildFlavor::Release) ? 0.10f : 0.12f;
+			// Ensure min doesn't exceed max when H is tiny
+			const float maxStrip = std::min(26.f * S, H);
+			const float minStrip = std::min(12.f * S, maxStrip);
+			stripReserve = std::clamp(H * pct, minStrip, maxStrip);
+		}
+
+		float cornerRadius = std::clamp(H * 0.06f, 4.f, 14.f * S);
+		float pinThickness = std::clamp(cornerRadius * 0.60f, 6.f, 13.f * S);
+		pinThickness *= std::clamp(0.85f + 0.15f * S, 1.0f, 1.8f); // widen pins a tad as size increases
+		float pinLength = std::clamp(H * 0.060f, 6.f, 16.f * S);
+		int   pinsPerSide = 7;
+
+		// ---- Layout limits (SAFE) ----------------------------------------------
+
+		// "Available text box" inside plate, never negative, and no clamp asserts.
+		const float textWAvail = clamp_nonneg(plateW - padX * 2.f);
+		const float textWMax = std::min(textWAvail, W);
+		const float textWMin = std::min(20.f, textWMax);
+		const float textW = (textWMax > 0.f) ? std::clamp(textWMax, textWMin, textWMax) : 0.f;
+
+		const float textHAvail = clamp_nonneg(maxPlateH - padY * 2.f - stripReserve);
+		const float textHMaxCap = std::min(textHAvail, H);
+		const float textHMin = std::min(20.f, textHMaxCap);
+		const float textHMax = (textHMaxCap > 0.f) ? std::clamp(textHMaxCap, textHMin, textHMaxCap) : 0.f;
+
+		float baseFontStart = std::clamp(H * 0.145f, 9.f, 40.f * S);
+		float baseFontMin = 9.f;
+
+		const float lineSpacingMul = 1.06f;
+		const float smallScale = std::clamp((float)cfg.labelScalePct, 50.f, 100.f) / 100.f;
+		const float tinyScale = 0.55f;
+
+		DWRITE_TRIMMING trim{};
+		trim.granularity = DWRITE_TRIMMING_GRANULARITY_CHARACTER;
+
+		struct BuiltLine
+		{
+			CComPtr<IDWriteTextFormat> fmt;
+			CComPtr<IDWriteTextLayout> layout;
+			DWRITE_TEXT_METRICS tm{};
+			float drawH = 0.f;
+			float fontSize = 0.f;
+		};
+
+		std::vector<BuiltLine> bestBuilt;
+		CComPtr<IDWriteTextFormat> bestFormatForBadge;
+
+		// If text area is too small, still render plate/pins/badges; skip text layout.
+		if (textW < 1.f || textHMax < 1.f)
+		{
+			bestBuilt.clear();
+		}
+		else
+		{
+			for (float baseFont = baseFontStart; baseFont >= baseFontMin; baseFont -= 1.0f)
+			{
+				std::vector<BuiltLine> built;
+				built.reserve(lines.size());
+
+				float totalH = 0.f;
+
+				for (size_t i = 0; i < lines.size(); ++i)
+				{
+					const LineRun& lr = lines[i];
+
+					float scale = 1.0f;
+					if (lr.size == LineRun::SizeTag::Small) scale = smallScale;
+					else if (lr.size == LineRun::SizeTag::Tiny) scale = tinyScale;
+
+					float fontSize = std::clamp(baseFont * scale, 8.f, 80.f * S);
+
+					DWRITE_FONT_WEIGHT weight = lr.strong ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL;
+
+					CComPtr<IDWriteTextFormat> fmt;
+					hr = g_dw->CreateTextFormat(
+						L"Segoe UI", nullptr,
+						weight,
+						DWRITE_FONT_STYLE_NORMAL,
+						DWRITE_FONT_STRETCH_NORMAL,
+						fontSize,
+						L"en-us",
+						&fmt);
+					if (FAILED(hr)) return hr;
+
+					fmt->SetTextAlignment(lr.center ? DWRITE_TEXT_ALIGNMENT_CENTER : DWRITE_TEXT_ALIGNMENT_LEADING);
+					fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+					fmt->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+
+					CComPtr<IDWriteTextLayout> layout;
+					hr = g_dw->CreateTextLayout(lr.text.c_str(), (UINT32)lr.text.size(), fmt, textW, 10000.f, &layout);
+					if (FAILED(hr)) return hr;
+
+					layout->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, fontSize * lineSpacingMul, fontSize * 0.80f);
+
+					if (i == lines.size() - 1)
+					{
+						CComPtr<IDWriteInlineObject> ellipsis;
+						if (SUCCEEDED(g_dw->CreateEllipsisTrimmingSign(fmt, &ellipsis)))
+							layout->SetTrimming(&trim, ellipsis);
+					}
+					else
+					{
+						DWRITE_TRIMMING noTrim{};
+						noTrim.granularity = DWRITE_TRIMMING_GRANULARITY_NONE;
+						layout->SetTrimming(&noTrim, nullptr);
+					}
+
+					DWRITE_TEXT_METRICS tm{};
+					layout->GetMetrics(&tm);
+
+					float hLine = tm.height;
+					totalH += hLine;
+
+					built.push_back({ fmt, layout, tm, hLine, fontSize });
+
+					if (!bestFormatForBadge)
+						bestFormatForBadge = fmt;
+				}
+
+				float gap = std::clamp(baseFont * 0.10f, 0.f, 3.f * S);
+				totalH += gap * (float)std::max<int>(0, (int)lines.size() - 1);
+
+				bestBuilt = std::move(built);
+
+				if (totalH <= textHMax)
+					break;
 			}
-        }
-        return FALSE;
-    }
-
-    bool Configure(_In_ HWND hWndParent) override
-    {
-        config.context = m_context;
-        config.Load(false);
-        INT_PTR result = DialogBoxParamW(
-            g_hModule,
-            MAKEINTRESOURCE(IDD_DLL_PLUGIN_CONFIGURE),
-            hWndParent,
-            DllConfigureDialogProc,
-            (LPARAM)this);
-        return result == IDOK;
-    }
-
-	 // ---- Rendering ----
-	 static HRESULT RenderTextThumb(
-		 const PluginConfig& cfg,
-		 IWICBitmap* bmp,
-		 MysticThumbsPluginGenerateParams& params,
-		 const std::wstring& fullText,
-		 const std::wstring& bitness,
-		 BuildFlavor flavor,
-		 const SigKind sigKind)
-	 {
-		 if (!bmp || !g_d2d || !g_dw) return E_INVALIDARG;
-
-		 const float W = (float)params.desiredWidth;
-		 const float H = (float)params.desiredHeight;
-
-		 struct LineRun
-		 {
-			 std::wstring text;
-			 bool center = false;
-			 bool strong = false;
-			 enum class SizeTag { Normal, Small, Tiny } size = SizeTag::Normal;
-		 };
-
-		 auto ParseLines = [&](const std::wstring& markup) -> std::vector<LineRun>
-			 {
-				 std::vector<LineRun> out;
-				 size_t start = 0;
-				 while (start <= markup.size())
-				 {
-					 size_t end = markup.find(L"\r\n", start);
-					 std::wstring line = (end == std::wstring::npos) ? markup.substr(start) : markup.substr(start, end - start);
-					 start = (end == std::wstring::npos) ? markup.size() + 1 : end + 2;
-
-					 line = HtmlTrim(line);
-					 if (line.empty()) continue;
-
-					 LineRun lr;
-					 lr.text = line;
-
-					 bool changed = true;
-					 while (changed)
-					 {
-						 changed = false;
-						 if (StripTagPair(lr.text, L"<center>", L"</center>")) { lr.center = true; changed = true; }
-						 if (StripTagPair(lr.text, L"<strong>", L"</strong>")) { lr.strong = true; changed = true; }
-						 if (StripTagPair(lr.text, L"<small>", L"</small>")) { lr.size = LineRun::SizeTag::Small; changed = true; }
-						 if (StripTagPair(lr.text, L"<tiny>", L"</tiny>")) { lr.size = LineRun::SizeTag::Tiny;  changed = true; }
-						 lr.text = HtmlTrim(lr.text);
-					 }
-
-					 out.push_back(lr);
-				 }
-				 return out;
-			 };
-
-		 // Flavor label + color
-		 auto FlavorLabel = [](BuildFlavor f) -> const wchar_t*
-			 {
-				 switch (f)
-				 {
-				 case BuildFlavor::Debug:   return L"Debug";
-				 case BuildFlavor::Test:    return L"Test";
-				 case BuildFlavor::Release: return L"Release";
-				 default:                   return L"";
-				 }
-			 };
-
-		 auto ColorFromRGB = [](unsigned rgb, float a) -> D2D1_COLOR_F
-			 {
-				 float r = ((rgb >> 16) & 0xFF) / 255.0f;
-				 float g = ((rgb >> 8) & 0xFF) / 255.0f;
-				 float b = ((rgb) & 0xFF) / 255.0f;
-				 return D2D1::ColorF(r, g, b, a);
-			 };
-
-		 auto FlavorColor = [&](BuildFlavor f) -> D2D1_COLOR_F
-			 {
-				 switch (f)
-				 {
-				 case BuildFlavor::Debug:   return ColorFromRGB(0xFF3B30, 1.0f);
-				 case BuildFlavor::Test:    return ColorFromRGB(0xFFD60A, 1.0f);
-				 case BuildFlavor::Release: return ColorFromRGB(0x34C759, 1.0f);
-				 default:                   return ColorFromRGB(0x9E9E9E, 1.0f);
-				 }
-			 };
-
-		 const wchar_t* flavorText = FlavorLabel(flavor);
-		 const D2D1_COLOR_F flavorColor = FlavorColor(flavor);
-		 bool showStrip = (flavor == BuildFlavor::Debug || flavor == BuildFlavor::Test || flavor == BuildFlavor::Release);
-		 if (flavor == BuildFlavor::Unknown) showStrip = false;
-
-		 // Parse lines
-		 std::vector<LineRun> lines = ParseLines(fullText);
-		 if (lines.empty())
-		 {
-			 LineRun lr;
-			 lr.text = L"(no text)";
-			 lines.push_back(lr);
-		 }
-
-		 // Render target
-		 CComPtr<ID2D1RenderTarget> rt;
-		 D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
-			 D2D1_RENDER_TARGET_TYPE_DEFAULT,
-			 D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-		 HRESULT hr = g_d2d->CreateWicBitmapRenderTarget(bmp, props, &rt);
-		 if (FAILED(hr)) return hr;
-
-
-		 // Instead of using a cfg.plateOpaque - check the thumbnail render mode if this is important
-		 auto plateOpaque = !!(params.flags & MT_Transparency_Transparent);
-
-		 rt->SetTextAntialiasMode(plateOpaque ? D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE
-			 : D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
-
-		 // Brushes
-		 const float plateAlpha = plateOpaque ? 1.0f : std::clamp(cfg.plateOpacity / 100.f, 0.f, 1.f);
-		 D2D1_COLOR_F plateColor = D2D1::ColorF(0.16f, 0.16f, 0.16f, plateAlpha);
-		 D2D1_COLOR_F accent = GetBitnessAccentColor(bitness, 1.0f);
-
-		 CComPtr<ID2D1SolidColorBrush> plateBrush;
-		 CComPtr<ID2D1SolidColorBrush> textBrush;
-		 CComPtr<ID2D1SolidColorBrush> accentBrush;
-
-		 rt->CreateSolidColorBrush(plateColor, &plateBrush);
-		 rt->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White, 1.f), &textBrush);
-		 rt->CreateSolidColorBrush(accent, &accentBrush);
-
-		 // Geometry constants
-		 const float outerMargin = 6.f;
-		 const float padX = 9.f;
-		 const float padY = 5.f;
-
-		 float plateW = std::clamp(W * 0.84f, 60.f, W - outerMargin * 2.f);
-		 float maxPlateH = H - outerMargin * 2.f;
-
-		 float stripReserve = 0.0f;
-		 if (showStrip && flavorText && *flavorText)
-		 {
-			 float pct = (flavor == BuildFlavor::Release) ? 0.10f : 0.12f;
-			 stripReserve = std::clamp(H * pct, 12.f, 26.f);
-		 }
-
-		 float cornerRadius = std::clamp(H * 0.06f, 4.f, 14.f);
-		 float pinThickness = std::clamp(cornerRadius * 0.60f, 6.f, 13.f);
-		 float pinLength = std::clamp(H * 0.060f, 6.f, 16.f);
-		 int   pinsPerSide = 7;
-
-		 // Layout limits
-		 const float textW = std::clamp(plateW - padX * 2.f, 20.f, W);
-		 const float textHMax = std::clamp(maxPlateH - padY * 2.f - stripReserve, 20.f, H);
-
-		 float baseFontStart = std::clamp(H * 0.145f, 9.f, 40.f);
-		 float baseFontMin = 9.f;
-
-		 const float lineSpacingMul = 1.06f;
-		 const float smallScale = std::clamp((float)cfg.labelScalePct, 50.f, 100.f) / 100.f;
-		 const float tinyScale = 0.55f;
-
-		 DWRITE_TRIMMING trim{};
-		 trim.granularity = DWRITE_TRIMMING_GRANULARITY_CHARACTER;
-
-		 struct BuiltLine
-		 {
-			 CComPtr<IDWriteTextFormat> fmt;
-			 CComPtr<IDWriteTextLayout> layout;
-			 DWRITE_TEXT_METRICS tm{};
-			 float drawH = 0.f;
-			 float fontSize = 0.f; // IMPORTANT: store font size for consistent re-layout
-		 };
-
-		 std::vector<BuiltLine> bestBuilt;
-		 CComPtr<IDWriteTextFormat> bestFormatForBadge;
-
-		 for (float baseFont = baseFontStart; baseFont >= baseFontMin; baseFont -= 1.0f)
-		 {
-			 std::vector<BuiltLine> built;
-			 built.reserve(lines.size());
-
-			 float totalH = 0.f;
-
-			 for (size_t i = 0; i < lines.size(); ++i)
-			 {
-				 const LineRun& lr = lines[i];
-
-				 float scale = 1.0f;
-				 if (lr.size == LineRun::SizeTag::Small) scale = smallScale;
-				 else if (lr.size == LineRun::SizeTag::Tiny) scale = tinyScale;
-
-				 float fontSize = std::clamp(baseFont * scale, 8.f, 80.f);
-
-				 DWRITE_FONT_WEIGHT weight = lr.strong ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL;
-
-				 CComPtr<IDWriteTextFormat> fmt;
-				 hr = g_dw->CreateTextFormat(
-					 L"Segoe UI", nullptr,
-					 weight,
-					 DWRITE_FONT_STYLE_NORMAL,
-					 DWRITE_FONT_STRETCH_NORMAL,
-					 fontSize,
-					 L"en-us",
-					 &fmt);
-				 if (FAILED(hr)) return hr;
-
-				 fmt->SetTextAlignment(lr.center ? DWRITE_TEXT_ALIGNMENT_CENTER : DWRITE_TEXT_ALIGNMENT_LEADING);
-				 fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
-				 fmt->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
-
-				 CComPtr<IDWriteTextLayout> layout;
-				 hr = g_dw->CreateTextLayout(lr.text.c_str(), (UINT32)lr.text.size(), fmt, textW, 10000.f, &layout);
-				 if (FAILED(hr)) return hr;
-
-				 layout->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, fontSize * lineSpacingMul, fontSize * 0.80f);
-
-				 if (i == lines.size() - 1)
-				 {
-					 CComPtr<IDWriteInlineObject> ellipsis;
-					 if (SUCCEEDED(g_dw->CreateEllipsisTrimmingSign(fmt, &ellipsis)))
-						 layout->SetTrimming(&trim, ellipsis);
-				 }
-				 else
-				 {
-					 DWRITE_TRIMMING noTrim{};
-					 noTrim.granularity = DWRITE_TRIMMING_GRANULARITY_NONE;
-					 layout->SetTrimming(&noTrim, nullptr);
-				 }
-
-				 DWRITE_TEXT_METRICS tm{};
-				 layout->GetMetrics(&tm);
-
-				 float hLine = tm.height;
-				 totalH += hLine;
-
-				 built.push_back({ fmt, layout, tm, hLine, fontSize });
-
-				 if (!bestFormatForBadge)
-					 bestFormatForBadge = fmt;
-			 }
-
-			 float gap = std::clamp(baseFont * 0.10f, 0.f, 3.f);
-			 totalH += gap * (float)std::max<int>(0, (int)lines.size() - 1);
-
-			 bestBuilt = std::move(built);
-
-			 if (totalH <= textHMax)
-				 break;
-		 }
-
-		 if (bestBuilt.empty()) return E_FAIL;
-
-		 // total stacked height
-		 float totalTextH = 0.f;
-		 float gap = std::clamp(bestBuilt[0].fontSize * 0.18f, 0.f, 3.f); // use font size, not tm.height
-		 for (size_t i = 0; i < bestBuilt.size(); ++i)
-		 {
-			 totalTextH += bestBuilt[i].drawH;
-			 if (i + 1 < bestBuilt.size()) totalTextH += gap;
-		 }
-
-		 float plateH = std::clamp(totalTextH + padY * 2.f + stripReserve, 30.f, maxPlateH);
-		 float left = std::clamp((W - plateW) * 0.5f, outerMargin, W - plateW - outerMargin);
-
-		 // Keep the plate visually "chip-like" even if text is short
-		 const float minPlateH = std::clamp(H * 0.85f, 90.f, H - outerMargin * 2.f); // The 0.85 can be tweaked to adjust height of plate and pins
-		 if (plateH < minPlateH)
-			 plateH = minPlateH;
-
-		 float top = std::clamp((H - plateH) * 0.5f, outerMargin, H - plateH - outerMargin);
-
-		 D2D1_RECT_F plateRect = D2D1::RectF(left, top, left + plateW, top + plateH);
-
-		 // Badge data
-		 std::wstring badgeText = L"?";
-		 bool diamond = false;
-		 if (bitness == L"32-bit") { badgeText = L"32"; diamond = true; }
-		 else if (bitness == L"64-bit") { badgeText = L"64"; diamond = false; }
-		 else if (bitness == L"ARM64") { badgeText = L"A64"; diamond = false; }
-
-		 float badgeSize = std::clamp(H * 0.22f, 22.f, 44.f);
-		 float badgeMargin = std::clamp(H * 0.010f, 4.f, 10.f);
-
-		 rt->BeginDraw();
-		 rt->Clear(D2D1::ColorF(0, 0, 0, 0));
-
-		 D2D1_RECT_F badgeRect = D2D1::RectF(
-			 plateRect.right - badgeMargin - badgeSize,
-			 plateRect.top + badgeMargin,
-			 plateRect.right - badgeMargin,
-			 plateRect.top + badgeMargin + badgeSize);
-
-		 float cornerInset = cornerRadius * 0.55f;
-		 DrawChipPins(rt, plateRect, pinThickness, pinLength, pinsPerSide, accentBrush, badgeRect, cornerInset);
-
-		 rt->FillRoundedRectangle(D2D1::RoundedRect(plateRect, cornerRadius, cornerRadius), plateBrush);
-
-		 // Draw stacked lines
-		 float x0 = plateRect.left + padX;
-		 float y = plateRect.top + padY;
-
-		 for (size_t i = 0; i < bestBuilt.size(); ++i)
-		 {
-			 float remaining = (plateRect.bottom - stripReserve) - y - padY;
-			 if (remaining < 10.f) remaining = 10.f;
-
-			 if (i == bestBuilt.size() - 1)
-			 {
-				 // Rebuild last line with correct line spacing + height cap
-				 const LineRun& lr = lines[i];
-
-				 CComPtr<IDWriteTextLayout> capped;
-				 hr = g_dw->CreateTextLayout(
-					 lr.text.c_str(), (UINT32)lr.text.size(),
-					 bestBuilt[i].fmt, textW, remaining, &capped);
-
-				 if (SUCCEEDED(hr) && capped)
-				 {
-					 capped->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM,
-						 bestBuilt[i].fontSize * lineSpacingMul,
-						 bestBuilt[i].fontSize * 0.80f);
-
-					 CComPtr<IDWriteInlineObject> ellipsis;
-					 if (SUCCEEDED(g_dw->CreateEllipsisTrimmingSign(bestBuilt[i].fmt, &ellipsis)))
-						 capped->SetTrimming(&trim, ellipsis);
-
-					 rt->DrawTextLayout(D2D1::Point2F(x0, y), capped, textBrush);
-				 }
-				 else
-				 {
-					 rt->DrawTextLayout(D2D1::Point2F(x0, y), bestBuilt[i].layout, textBrush);
-				 }
-			 }
-			 else
-			 {
-				 rt->DrawTextLayout(D2D1::Point2F(x0, y), bestBuilt[i].layout, textBrush);
-			 }
-
-			 y += bestBuilt[i].drawH;
-			 if (i + 1 < bestBuilt.size()) y += gap;
-		 }
-
-		 // Strip
-		 if (stripReserve > 0.0f && showStrip && flavorText && *flavorText)
-			 DrawBuildStrip(rt, g_dw, plateRect, stripReserve, std::wstring(flavorText), flavorColor, cornerRadius);
-
-		 // Bitness badge
-		 D2D1_COLOR_F accentColor = GetBitnessAccentColor(bitness, 1.0f);
-		 DrawBitnessBadge(rt, g_dw,
-			 bestFormatForBadge ? bestFormatForBadge : bestBuilt[0].fmt,
-			 W, H, badgeText, diamond, badgeSize, badgeMargin, accentColor);
-
-		 // Signature shield
-		 float shieldSize = std::clamp(H * 0.25f, 16.f, 35.f);
-		 float sx = plateRect.right - shieldSize * 0.45f;
-		 float sy = plateRect.bottom - shieldSize * 0.75f;
-		 sy -= (stripReserve > 0.0f ? stripReserve * 0.15f : 0.0f);
-
-		 if (sigKind == SigKind::Embedded)
-			 DrawDigitalSignedShield(rt, sx, sy, shieldSize);
-		 else if (sigKind == SigKind::Catalog)
-			 DrawCatalogShield(rt, sx, sy, shieldSize);
-
-		 hr = rt->EndDraw();
-		 return hr;
-	 }
-
-
-    HRESULT Generate(_Inout_ MysticThumbsPluginGenerateParams& params,
-        _COM_Outptr_result_maybenull_ IWICBitmapSource** lplpOutputImage) override
-    {
-        if (!lplpOutputImage) return E_POINTER;
-        *lplpOutputImage = nullptr;
-
-        IStream* pStream = m_context ? m_context->GetStream() : nullptr;
-        if (!pStream) return E_FAIL;
-
-        LARGE_INTEGER zero{};
-        pStream->Seek(zero, STREAM_SEEK_SET, nullptr);
-
-        config.context = m_context;
-        config.Load(false);
-
-        BindLogConfig(&config.log);
-        ClearLogContext();
-        SetLogContextCall((int)params.desiredWidth);
-
-        std::wstring path = GetPathFromStream(pStream);
-        std::wstring bitness = L"Unknown";
-        if (!path.empty())
-            bitness = GetPEBitnessFromFile(path);
-
-        CComPtr<IWICImagingFactory> wic;
-        HRESULT hr = wic.CoCreateInstance(CLSID_WICImagingFactory);
-        if (FAILED(hr)) return hr;
-
-        CComPtr<IWICBitmap> bmp;
-        hr = wic->CreateBitmap(params.desiredWidth, params.desiredHeight,
-            GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnDemand, &bmp);
-        if (FAILED(hr)) return hr;
-
-        std::map<std::wstring, std::wstring> kv;
-        kv[L"DLLBitnessAsText"] = bitness;
-
-		  // Build variables to use in template expansion
-		  const wchar_t* keys[] =
-		  {
-				L"CompanyName", L"FileDescription", L"FileVersion",
-				L"InternalName", L"LegalCopyright", 
-				L"OriginalFilename", L"ProductName", L"ProductVersion",
-				L"Comments", L"LegalTrademarks", L"PrivateBuild", L"SpecialBuild"
-		  };
-
-        VersionInfoBlob vi;
-		  bool hasVersion = (!path.empty() && LoadVersionInfoBlob(path, vi));
-
-		  kv[L"DLLFileVersionAsText"] =
-			  hasVersion ?
-			  (QueryFixedFileVersion(vi).empty() ? L"(no version)" : QueryFixedFileVersion(vi))
-			  : L"(no version info)";
-
-		  for (auto* k : keys)
-		  {
-			  // VI = This variable comes from VERSIONINFO!
-			  std::wstring key = std::wstring(L"VI_") + k;
-
-			  if (hasVersion)
-				  kv[key] = QueryVersionString(vi, k);
-			  else
-				  kv[key] = L"";
-		  }
-
-        if (!path.empty()) {
-           kv[L"DllFileType"] = GetDllFileTypeFromPath(path);
-        }
-        else
-           kv[L"DllFileType"] = L"UNKNOWN";
-
-		  kv[L"VI_FileDescriptionFirstSentence"] =
-			  FirstSentenceOrTruncate(kv[L"VI_FileDescription"]);
-
-
-        std::wstring expanded = ExpandTokens(config.templ, kv);
-        NormalizeNewlinesInPlace(expanded);
-
-		  BuildFlavor flavor = DetectBuildFlavor(path);
-
-		  SigKind sigKind = DetectSigKind(path);
-
-        hr = RenderTextThumb(config, bmp, params, expanded, bitness, flavor, sigKind);
-        if (FAILED(hr)) return hr;
-
-        *lplpOutputImage = bmp.Detach();
-        return S_OK;
-    }
+		}
+
+		// total stacked height
+		float totalTextH = 0.f;
+		float gap = 0.f;
+		if (!bestBuilt.empty())
+		{
+			gap = std::clamp(bestBuilt[0].fontSize * 0.18f, 0.f, 3.f * S);
+			for (size_t i = 0; i < bestBuilt.size(); ++i)
+			{
+				totalTextH += bestBuilt[i].drawH;
+				if (i + 1 < bestBuilt.size()) totalTextH += gap;
+			}
+		}
+
+		// Plate height: avoid clamp asserts if maxPlateH < 30, etc.
+		const float plateHVal = totalTextH + padY * 2.f + stripReserve;
+		const float plateHMin = std::min(30.f, maxPlateH);
+		float plateH = std::clamp(plateHVal, plateHMin, maxPlateH);
+
+		// Keep plate visually tall when possible, but never exceed maxPlateH and never clamp-invalid.
+		const float desiredMinPlateH = std::clamp(H * 0.85f, 0.f, maxPlateH);
+		if (plateH < desiredMinPlateH)
+			plateH = desiredMinPlateH;
+
+		// Horizontal placement: safe even when bounds invert.
+		float left = std::clamp((W - plateW) * 0.5f, outerMargin, W - plateW - outerMargin);
+		float top = std::clamp((H - plateH) * 0.5f, outerMargin, H - plateH - outerMargin);
+
+		D2D1_RECT_F plateRect = D2D1::RectF(left, top, left + plateW, top + plateH);
+
+		// Badge data
+		std::wstring badgeText = L"?";
+		bool diamond = false;
+		if (bitness == L"32-bit") { badgeText = L"32"; diamond = true; }
+		else if (bitness == L"64-bit") { badgeText = L"64"; diamond = false; }
+		else if (bitness == L"ARM64") { badgeText = L"A64"; diamond = false; }
+
+		float badgeSize = std::clamp(H * 0.22f, 22.f, 44.f * S);
+		float badgeMargin = std::clamp(H * 0.010f, 4.f, 10.f * S);
+
+		rt->BeginDraw();
+		rt->Clear(D2D1::ColorF(0, 0, 0, 0));
+
+		D2D1_RECT_F badgeRect = D2D1::RectF(
+			plateRect.right - badgeMargin - badgeSize,
+			plateRect.top + badgeMargin,
+			plateRect.right - badgeMargin,
+			plateRect.top + badgeMargin + badgeSize);
+
+		float cornerInset = cornerRadius * 0.55f;
+		DrawChipPins(rt, plateRect, pinThickness, pinLength, pinsPerSide, accentBrush, badgeRect, cornerInset);
+
+		rt->FillRoundedRectangle(D2D1::RoundedRect(plateRect, cornerRadius, cornerRadius), plateBrush);
+
+		// Draw stacked lines (only if we built layouts)
+		if (!bestBuilt.empty())
+		{
+			float x0 = plateRect.left + padX;
+			float y = plateRect.top + padY;
+
+			for (size_t i = 0; i < bestBuilt.size(); ++i)
+			{
+				float remaining = (plateRect.bottom - stripReserve) - y - padY;
+				if (remaining < 10.f) remaining = 10.f;
+
+				if (i == bestBuilt.size() - 1)
+				{
+					// Rebuild last line with height cap + trimming
+					const LineRun& lr = lines[i];
+
+					CComPtr<IDWriteTextLayout> capped;
+					hr = g_dw->CreateTextLayout(
+						lr.text.c_str(), (UINT32)lr.text.size(),
+						bestBuilt[i].fmt, textW, remaining, &capped);
+
+					if (SUCCEEDED(hr) && capped)
+					{
+						capped->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM,
+							bestBuilt[i].fontSize * lineSpacingMul,
+							bestBuilt[i].fontSize * 0.80f);
+
+						CComPtr<IDWriteInlineObject> ellipsis;
+						if (SUCCEEDED(g_dw->CreateEllipsisTrimmingSign(bestBuilt[i].fmt, &ellipsis)))
+							capped->SetTrimming(&trim, ellipsis);
+
+						rt->DrawTextLayout(D2D1::Point2F(x0, y), capped, textBrush);
+					}
+					else
+					{
+						rt->DrawTextLayout(D2D1::Point2F(x0, y), bestBuilt[i].layout, textBrush);
+					}
+				}
+				else
+				{
+					rt->DrawTextLayout(D2D1::Point2F(x0, y), bestBuilt[i].layout, textBrush);
+				}
+
+				y += bestBuilt[i].drawH;
+				if (i + 1 < bestBuilt.size()) y += gap;
+			}
+		}
+
+		// Strip
+		if (stripReserve > 0.0f && showStrip && flavorText && *flavorText)
+			DrawBuildStrip(rt, g_dw, plateRect, stripReserve, std::wstring(flavorText), flavorColor, cornerRadius, S);
+
+		// Bitness badge 
+		D2D1_COLOR_F accentColor = GetBitnessAccentColor(bitness, 1.0f);
+		DrawBitnessBadge(rt, g_dw,
+			bestFormatForBadge ? bestFormatForBadge : (!bestBuilt.empty() ? bestBuilt[0].fmt : nullptr),
+			W, H, badgeText, diamond, badgeSize, badgeMargin, accentColor, S);
+
+		// Signature shield
+		float shieldSize = std::clamp(H * 0.25f, 16.f, 35.f * S);
+		float sx = plateRect.right - shieldSize * 0.45f;
+		float sy = plateRect.bottom - shieldSize * 0.75f;
+		sy -= (stripReserve > 0.0f ? stripReserve * 0.15f : 0.0f);
+
+		if (sigKind == SigKind::Embedded)
+			DrawDigitalSignedShield(rt, sx, sy, shieldSize, S);
+ 		else if (sigKind == SigKind::Catalog)
+ 			DrawCatalogShield(rt, sx, sy, shieldSize, S);
+
+		hr = rt->EndDraw();
+		return hr;
+	}
+
+	HRESULT Generate(_Inout_ MysticThumbsPluginGenerateParams& params,
+		_COM_Outptr_result_maybenull_ IWICBitmapSource** lplpOutputImage) override
+	{
+		if (!lplpOutputImage) return E_POINTER;
+		*lplpOutputImage = nullptr;
+
+		IStream* pStream = m_context ? m_context->GetStream() : nullptr;
+		if (!pStream) return E_FAIL;
+
+		LARGE_INTEGER zero{};
+		pStream->Seek(zero, STREAM_SEEK_SET, nullptr);
+
+		config.context = m_context;
+		config.Load();
+
+		std::wstring path = GetPathFromStream(pStream);
+		std::wstring bitness = L"Unknown";
+		if (!path.empty())
+			bitness = GetPEBitnessFromFile(path);
+
+		if (m_log) m_log->logf(L"%sGenerate: start: %ux%u", m_logTag.Tag(), (unsigned)params.desiredWidth, (unsigned)params.desiredHeight);
+
+		CComPtr<IWICImagingFactory> wic;
+		HRESULT hr = wic.CoCreateInstance(CLSID_WICImagingFactory);
+		if (FAILED(hr)) return hr;
+
+		CComPtr<IWICBitmap> bmp;
+		hr = wic->CreateBitmap(params.desiredWidth, params.desiredHeight,
+			GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnDemand, &bmp);
+		if (FAILED(hr)) return hr;
+
+		std::map<std::wstring, std::wstring> kv;
+		kv[L"DLLBitnessAsText"] = bitness;
+
+		// Build variables to use in template expansion
+		const wchar_t* keys[] =
+		{
+			 L"CompanyName", L"FileDescription", L"FileVersion",
+			 L"InternalName", L"LegalCopyright",
+			 L"OriginalFilename", L"ProductName", L"ProductVersion",
+			 L"Comments", L"LegalTrademarks", L"PrivateBuild", L"SpecialBuild"
+		};
+
+		VersionInfoBlob vi;
+		bool hasVersion = (!path.empty() && LoadVersionInfoBlob(path, vi));
+
+		kv[L"DLLFileVersionAsText"] =
+			hasVersion ?
+			(QueryFixedFileVersion(vi).empty() ? L"(no version)" : QueryFixedFileVersion(vi))
+			: L"(no version info)";
+
+		for (auto* k : keys)
+		{
+			// VI = This variable comes from VERSIONINFO!
+			std::wstring key = std::wstring(L"VI_") + k;
+
+			if (hasVersion)
+				kv[key] = QueryVersionString(vi, k);
+			else
+				kv[key] = L"";
+		}
+
+		if (!path.empty()) {
+			kv[L"DllFileType"] = GetDllFileTypeFromPath(path);
+		}
+		else
+			kv[L"DllFileType"] = L"UNKNOWN";
+
+		kv[L"VI_FileDescriptionFirstSentence"] =
+			FirstSentenceOrTruncate(kv[L"VI_FileDescription"]);
+
+
+		std::wstring expanded = ExpandTokens(config.templ, kv);
+		NormalizeNewlinesInPlace(expanded);
+
+		BuildFlavor flavor = DetectBuildFlavor(path);
+
+		SigKind sigKind = DetectSigKind(path);
+
+		float uiScale = (float)std::max(params.desiredWidth, params.desiredHeight) / 256.0f;
+		uiScale = std::clamp(uiScale, 0.25f, 8.0f);
+		// Prefer Ping() derived scale (matches QuickView ping size hint), but fall back if needed.
+		if (m_scale > 0.0f) uiScale = m_scale;
+
+		hr = RenderTextThumb(config, bmp, params, expanded, bitness, flavor, sigKind, uiScale);
+		if (FAILED(hr)) return hr;
+
+		*lplpOutputImage = bmp.Detach();
+		return S_OK;
+	}
 };
+
+
+INT_PTR CALLBACK CDLLPlugin::ConfigureDialogProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+	switch (uMsg) {
+	case WM_INITDIALOG:
+	{
+		CDLLPlugin* plugin = (CDLLPlugin*)lParam;
+		SetWindowLongPtrW(hwndDlg, GWLP_USERDATA, (LONG_PTR)plugin);
+
+		plugin->config.context = plugin->m_context;
+		plugin->config.Load();
+
+		const auto& c = plugin->config;
+
+		SetText(hwndDlg, IDC_DLL_TEMPLATE_EDIT, c.templ);
+		// Prevent the highlighting madness
+		SendMessageW(GetDlgItem(hwndDlg, IDC_DLL_TEMPLATE_EDIT), EM_SETSEL, -1, -1);
+
+		SetUInt(hwndDlg, IDC_DLL_PLATE_OPACITY_EDIT, c.plateOpacity);
+		SetCheck(hwndDlg, IDC_DLL_PLATE_OPAQUE, c.plateOpaque);
+		EnableWindow(GetDlgItem(hwndDlg, IDC_DLL_PLATE_OPAQUE), FALSE);
+		SetUInt(hwndDlg, IDC_DLL_LABEL_SCALE_EDIT, c.labelScalePct);
+
+		// Shouldn't need this but something (dark mode stuff?) is setting the IDC_DLL_TEMPLATE_EDIT control
+		SetFocus((HWND)wParam);
+
+		// Tooltips
+		HWND hTip = CreateWindowExW(0, TOOLTIPS_CLASSW, nullptr,
+			WS_POPUP | TTS_ALWAYSTIP | TTS_BALLOON,
+			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+			hwndDlg, nullptr, g_hModule, nullptr);
+		if (hTip)
+		{
+			SendMessageW(hTip, TTM_SETMAXTIPWIDTH, 0, 420);
+			AddTooltip(hTip, hwndDlg, IDC_DLL_TEMPLATE_EDIT, L"The template to use for the content of the thumbnail. Variables and semi-HTML OK! See documentation for more information");
+			AddTooltip(hTip, hwndDlg, IDC_DLL_PLATE_OPAQUE, L"Turn on or off opaque plaque");
+			AddTooltip(hTip, hwndDlg, IDC_DLL_PLATE_OPACITY_EDIT, L"How opaque the plate should be? (0-100%).");
+			AddTooltip(hTip, hwndDlg, IDC_DLL_LABEL_SCALE_EDIT, L"How large should the plaque be? (0-100%).");
+		}
+
+
+		return FALSE;
+	}
+	case WM_COMMAND:
+	{
+		CDLLPlugin* plugin = (CDLLPlugin*)GetWindowLongPtrW(hwndDlg, GWLP_USERDATA);
+		ATLASSERT(plugin);
+
+		int wNotifyCode = HIWORD(wParam);
+		int wID = LOWORD(wParam);
+
+		switch (wID) {
+		case IDOK:
+			if (wNotifyCode == BN_CLICKED) {
+				// Save the current configuration to the registry
+				plugin->config.Save(hwndDlg);
+				EndDialog(hwndDlg, IDOK);
+				return TRUE;
+			}
+			break;
+		case IDCANCEL:
+			if (wNotifyCode == BN_CLICKED) {
+				EndDialog(hwndDlg, IDCANCEL);
+				return TRUE;
+			}
+			break;
+		}
+		break;
+	}
+	}
+	return FALSE;
+}
+
+
 
 // -----------------------------------------------------------------------------
 // Required exports
 // -----------------------------------------------------------------------------
 extern "C" DLLPLUGIN_API int Version()
 {
-    return MYSTICTHUMBS_PLUGIN_VERSION;
+	return MYSTICTHUMBS_PLUGIN_VERSION;
 }
 
 extern "C" DLLPLUGIN_API bool Initialize()
@@ -2078,46 +2146,46 @@ extern "C" DLLPLUGIN_API bool Initialize()
 
 	ATLVERIFY(!g_d2d);
 	/*ATLENSURE_SUCCEEDED*/(hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, &g_d2d));
-    if (FAILED(hr)) return false;
+	if (FAILED(hr)) return false;
 
-    ATLVERIFY(!g_dw);
+	ATLVERIFY(!g_dw);
 	/*ATLENSURE_SUCCEEDED*/(hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
-        reinterpret_cast<IUnknown**>(&g_dw)));
-    if (FAILED(hr)) return false;
+		reinterpret_cast<IUnknown**>(&g_dw)));
+	if (FAILED(hr)) return false;
 
-    return true;
+	return true;
 }
 
 extern "C" DLLPLUGIN_API bool Shutdown()
 {
-    g_dw.Release();
-    g_d2d.Release();
-    return true;
+	g_dw.Release();
+	g_d2d.Release();
+	return true;
 }
 
 extern "C" DLLPLUGIN_API IMysticThumbsPlugin* CreateInstance(_In_ IMysticThumbsPluginContext* context)
 {
-    CVCDLLPlugin* plugin = (CVCDLLPlugin*)CoTaskMemAlloc(sizeof(CVCDLLPlugin));
-    if (!plugin) return nullptr;
+	CDLLPlugin* plugin = (CDLLPlugin*)CoTaskMemAlloc(sizeof(CDLLPlugin));
+	if (!plugin) return nullptr;
 
 #ifdef _DEBUG
 	// This may be useful under some situations. See the method signature for more information.
 	auto isDefaultInstance = context->IsDefaultInstance();
 #endif
 
-    return new(plugin) CVCDLLPlugin(context);
+	return new(plugin) CDLLPlugin(context);
 }
 
-extern "C" DLLPLUGIN_API bool PreventLoading([[maybe_unused]] bool isDebugProcess) // [[maybe_unused]] since C++17
+extern "C" DLLPLUGIN_API bool PreventLoading([[maybe_unused]] bool isDebugProcess)
 {
-    //UNREFERENCED_PARAMETER(isDebugProcess); // The Windows way to do the [[maybe_unused]] thing
-    return false;
+	//UNREFERENCED_PARAMETER(isDebugProcess); // The Windows way to do the [[maybe_unused]] thing
+	return false;
 }
 
 // DllMain: keep it minimal
 DLLPLUGIN_API BOOL APIENTRY DllMain(HINSTANCE hModule, DWORD reason, void*)
 {
-    if (reason == DLL_PROCESS_ATTACH)
-        g_hModule = hModule;
-    return TRUE;
+	if (reason == DLL_PROCESS_ATTACH)
+		g_hModule = hModule;
+	return TRUE;
 }
