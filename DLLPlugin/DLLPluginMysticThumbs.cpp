@@ -1412,25 +1412,34 @@ private:
 			CRegKeyHelper<false> root(hRoot);
             DWORD v = 0; // generic temp DWORD for queries for boolean etc.
 
-			// Template
-			(void)root.QueryStringValue(REG_TEMPLATE, templ);
-            if(templ.empty()) // User may have cleared it on last save. If so, reset to default.
-				templ = DEFAULT_TEMPLATE;
+			// Ctrl+click "Reset to defaults" behavior. Maybe mention this on the dialog or tooltip somewhere.
+            bool loadDefaults = GetAsyncKeyState(VK_CONTROL) < 0;
 
-			// Plate opacity
-			plateOpacity = 55;
-			if(root.QueryDWORDValue(REG_PLATE_OPACITY, plateOpacity) == ERROR_SUCCESS)
-				plateOpacity = std::clamp(plateOpacity, 0UL, 100UL);
+			// Set the defaults first
+            templ = DEFAULT_TEMPLATE;
+            plateOpacity = 55;
+            plateOpaque = false;
+            labelScalePct = 75;
 
-			// Plate opaque
-			plateOpaque = false;
-			if(root.QueryDWORDValue(REG_PLATE_OPAQUE, v) == ERROR_SUCCESS)
-				plateOpaque = !!v;
+			// Load saved if required.
+			if(!loadDefaults) {
+				// Template
+				(void)root.QueryStringValue(REG_TEMPLATE, templ);
+				if(templ.empty()) // User may have cleared it on last save. If so, reset to default.
+					templ = DEFAULT_TEMPLATE;
 
-			// Label scale
-			labelScalePct = 75;
-			if(root.QueryDWORDValue(REG_LABEL_SCALE, labelScalePct) == ERROR_SUCCESS)
-				labelScalePct = std::clamp(labelScalePct, 50UL, 100UL);
+				// Plate opacity
+				if(root.QueryDWORDValue(REG_PLATE_OPACITY, plateOpacity) == ERROR_SUCCESS)
+					plateOpacity = std::clamp(plateOpacity, 0UL, 100UL);
+
+				// Plate opaque
+				if(root.QueryDWORDValue(REG_PLATE_OPAQUE, v) == ERROR_SUCCESS)
+					plateOpaque = !!v;
+
+				// Label scale
+				if(root.QueryDWORDValue(REG_LABEL_SCALE, labelScalePct) == ERROR_SUCCESS)
+					labelScalePct = std::clamp(labelScalePct, 50UL, 100UL);
+			}
 		}
 
 		void Save(HWND hDlg)
