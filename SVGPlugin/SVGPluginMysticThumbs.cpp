@@ -127,8 +127,6 @@ private:
 		bool swapRB = true;
 		bool returnDebugSVGThumbnail = false;
 		bool useDesiredSizeHint = false;
-		DWORD maxSvgDim = 4096;
-		DWORD maxSvgBytes = 256u * 1024u * 1024u;
 
 		// External thumbnailer
 		bool thumbEnabled = false;
@@ -161,10 +159,6 @@ private:
 			if (root.QueryDWORDValue(REG_SWAP_RB, d) == ERROR_SUCCESS) swapRB = (d != 0);
 			if (root.QueryDWORDValue(REG_RETURN_DEBUG_SVG_TN, d) == ERROR_SUCCESS) returnDebugSVGThumbnail = (d != 0);
 			if (root.QueryDWORDValue(REG_USE_DESIRED_SIZE_HINT, d) == ERROR_SUCCESS) useDesiredSizeHint = (d != 0);
-
-			// Limits
-			if (root.QueryDWORDValue(REG_MAX_SVG_DIM, d) == ERROR_SUCCESS) maxSvgDim = d;
-			if (root.QueryDWORDValue(REG_MAX_SVG_BYTES, d) == ERROR_SUCCESS) maxSvgBytes = d;
 
 			// External thumbnailer
 			thumbEnabled = false;
@@ -208,30 +202,27 @@ private:
 			// IMPORTANT: Do not close MysticThumbs' HKEY. 
 			CRegKeyHelper<false> root(hRoot);
 
-			(void)root.SetDWORDValue(REG_LEAVE_TEMP, GetCheck(hDlg, IDC_CFG_LEAVE_TEMP) ? 1u : 0u);
-			(void)root.SetDWORDValue(REG_SWAP_RB, GetCheck(hDlg, IDC_CFG_SWAP_RB) ? 1u : 0u);
-			(void)root.SetDWORDValue(REG_RETURN_DEBUG_SVG_TN, GetCheck(hDlg, IDC_CFG_RETURN_DEBUG) ? 1u : 0u);
-			(void)root.SetDWORDValue(REG_USE_DESIRED_SIZE_HINT, GetCheck(hDlg, IDC_CFG_USE_DESIRED_SIZE_HINT) ? 1u : 0u);
-
-			(void)root.SetDWORDValue(REG_MAX_SVG_DIM, GetUInt(hDlg, IDC_CFG_MAX_DIM, maxSvgDim));
-			(void)root.SetDWORDValue(REG_MAX_SVG_BYTES, GetUInt(hDlg, IDC_CFG_MAX_BYTES, maxSvgBytes));
+			root.SetDWORDValue(REG_LEAVE_TEMP, GetCheck(hDlg, IDC_CFG_LEAVE_TEMP) ? 1u : 0u);
+			root.SetDWORDValue(REG_SWAP_RB, GetCheck(hDlg, IDC_CFG_SWAP_RB) ? 1u : 0u);
+			root.SetDWORDValue(REG_RETURN_DEBUG_SVG_TN, GetCheck(hDlg, IDC_CFG_RETURN_DEBUG) ? 1u : 0u);
+			root.SetDWORDValue(REG_USE_DESIRED_SIZE_HINT, GetCheck(hDlg, IDC_CFG_USE_DESIRED_SIZE_HINT) ? 1u : 0u);
 
 			CRegKeyHelper<> thumb;
 			if (thumb.Create(root, REG_THUMB_SUBKEY) == ERROR_SUCCESS)
 			{
-				(void)thumb.SetDWORDValue(REG_THUMB_ENABLED, GetCheck(hDlg, IDC_CFG_THUMB_ENABLE) ? 1u : 0u);
+				thumb.SetDWORDValue(REG_THUMB_ENABLED, GetCheck(hDlg, IDC_CFG_THUMB_ENABLE) ? 1u : 0u);
 				std::wstring thumbPath = GetText(hDlg, IDC_CFG_THUMB_PATH);
-				(void)thumb.SetStringValue(REG_THUMB_PATH, thumbPath.c_str());
+				thumb.SetStringValue(REG_THUMB_PATH, thumbPath.c_str());
 				std::wstring thumbParams = GetText(hDlg, IDC_CFG_THUMB_PARAMS);
-				(void)thumb.SetStringValue(REG_THUMB_PARAMS, thumbParams.c_str());
+				thumb.SetStringValue(REG_THUMB_PARAMS, thumbParams.c_str());
 			}
 
 			CRegKeyHelper<> norm;
 			if (norm.Create(root, REG_NORM_SUBKEY) == ERROR_SUCCESS)
 			{
-				(void)norm.SetDWORDValue(REG_NORM_ROOTFILLWHITE, GetCheck(hDlg, IDC_CFG_NORM_ROOT_FILL_WHITE) ? 1u : 0u);
-				(void)norm.SetDWORDValue(REG_NORM_RGBA_ATTR, GetCheck(hDlg, IDC_CFG_NORM_RGBA_ATTR) ? 1u : 0u);
-				(void)norm.SetDWORDValue(REG_NORM_RGBA_STYLE, GetCheck(hDlg, IDC_CFG_NORM_RGBA_STYLE) ? 1u : 0u);
+				norm.SetDWORDValue(REG_NORM_ROOTFILLWHITE, GetCheck(hDlg, IDC_CFG_NORM_ROOT_FILL_WHITE) ? 1u : 0u);
+				norm.SetDWORDValue(REG_NORM_RGBA_ATTR, GetCheck(hDlg, IDC_CFG_NORM_RGBA_ATTR) ? 1u : 0u);
+				norm.SetDWORDValue(REG_NORM_RGBA_STYLE, GetCheck(hDlg, IDC_CFG_NORM_RGBA_STYLE) ? 1u : 0u);
 			}
 		}
 	} config;
@@ -516,8 +507,6 @@ private:
 		const std::wstring& svgPath,
 		unsigned int desiredSize,        // MysticThumbs hint (used only if useDesiredSize == true)
 		bool useDesiredSize,             // if false: ignore desiredSize, return "full sized" (subject to safety cap)
-		unsigned int maxDim,             // 0 = no dimension cap; otherwise downscale so max(width,height) <= maxDim
-		size_t maxBytes,                 // 0 = no memory cap; otherwise refuse allocations larger than this
 		bool& hasAlpha,
 		unsigned int& width,
 		unsigned int& height)
@@ -614,13 +603,6 @@ private:
 			// Safety cap: if maxDim > 0 and SVG is larger, downscale to fit within maxDim.
 			float capScale = 1.0f;
 
-			if (maxDim > 0)
-			{
-				const float maxSrcDim = (svgW > svgH) ? svgW : svgH;
-				if (maxSrcDim > (float)maxDim)
-					capScale = (float)maxDim / maxSrcDim; // downscale only
-			}
-
 			scale = capScale; // never upscale 
 
 			// Use rounded pixel size; clamp to at least 1x1.
@@ -631,11 +613,6 @@ private:
 			tr.d = scale;
 			// tr.e/tr.f remain 0 (top-left aligned)
 		}
-
-		// ---- Allocate output buffer with overflow + size checks ----
-		// Default memory cap if caller passes 0 (tune to taste).
-		if (maxBytes == 0)
-			maxBytes = 256ull * 1024ull * 1024ull; // 256 MB
 
 		// Compute stride/bufSize carefully
 		const size_t w = (size_t)width;
@@ -666,12 +643,6 @@ private:
 			return nullptr;
 		}
 		const size_t bufSize = stride * h;
-
-		if (bufSize > maxBytes)
-		{
-			resvg_tree_destroy(tree);
-			return nullptr;
-		}
 
 		unsigned char* buffer = (unsigned char*)LocalAlloc(LMEM_FIXED, bufSize);
 		if (!buffer)
@@ -793,15 +764,11 @@ private:
 
 		// Stage 3: resvg render (primary)
 		const bool useDesiredSize = config.useDesiredSizeHint; // Should we respect desiredSize hint?
-		const unsigned int maxDim = config.maxSvgDim;          // Max SVG dimension
-		const size_t maxBytes = config.maxSvgBytes;            // Max SVG memory consumption, MAX CAP!
 
 		unsigned char* buffer = RenderSvgWithResvgFromFile(
 			svgPath,
 			desiredSize,
 			useDesiredSize,
-			maxDim,
-			maxBytes,
 			hasAlpha,
 			width,
 			height);
@@ -985,9 +952,6 @@ INT_PTR CALLBACK CSVGPlugin::ConfigureDialogProc(HWND hwndDlg, UINT uMsg, WPARAM
 		SetCheck(hwndDlg, IDC_CFG_RETURN_DEBUG, c.returnDebugSVGThumbnail);
 		SetCheck(hwndDlg, IDC_CFG_USE_DESIRED_SIZE_HINT, c.useDesiredSizeHint);
 
-		SetUInt(hwndDlg, IDC_CFG_MAX_DIM, c.maxSvgDim);
-		SetUInt(hwndDlg, IDC_CFG_MAX_BYTES, c.maxSvgBytes);
-
 		CheckDlgButton(hwndDlg, IDC_CFG_THUMB_ENABLE, c.thumbEnabled ? BST_CHECKED : BST_UNCHECKED);
 		SetText(hwndDlg, IDC_CFG_THUMB_PATH, c.thumbPath);
 		SetText(hwndDlg, IDC_CFG_THUMB_PARAMS, c.thumbParams);
@@ -1004,31 +968,29 @@ INT_PTR CALLBACK CSVGPlugin::ConfigureDialogProc(HWND hwndDlg, UINT uMsg, WPARAM
 		SetCheck(hwndDlg, IDC_CFG_NORM_RGBA_STYLE, c.normRgbaStyle);
 
 		// Tooltips
-		HWND hTip = CreateWindowExW(0, TOOLTIPS_CLASSW, nullptr,
-			WS_POPUP | TTS_ALWAYSTIP | TTS_BALLOON,
-			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-			hwndDlg, nullptr, g_hModule, nullptr);
-		if (hTip)
-		{
-			SendMessageW(hTip, TTM_SETMAXTIPWIDTH, 0, 420);
+		if(plugin->m_context->TooltipsEnabled()) {
+			HWND hTip = CreateWindowExW(0, TOOLTIPS_CLASSW, nullptr,
+										WS_POPUP | TTS_ALWAYSTIP | TTS_BALLOON,
+										CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+										hwndDlg, nullptr, g_hModule, nullptr);
+			if(hTip) {
+				SendMessageW(hTip, TTM_SETMAXTIPWIDTH, 0, 420);
 
 
-			AddTooltip(hTip, hwndDlg, IDC_CFG_LEAVE_TEMP, L"Keep temporary extracted/converted files. Useful when debugging. Be aware that this can consume significant disk space.");
-			AddTooltip(hTip, hwndDlg, IDC_CFG_SWAP_RB, L"Swap R/B channels (RGBA <-> BGRA) for Windows compatibility.");
-			AddTooltip(hTip, hwndDlg, IDC_CFG_RETURN_DEBUG, L"Return a debug thumbnail when rendering fails. Useful for debugging");
-			AddTooltip(hTip, hwndDlg, IDC_CFG_USE_DESIRED_SIZE_HINT, L"Let MysticThumbs desired size hint influence render scale.");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_LEAVE_TEMP, L"Keep temporary extracted/converted files. Useful when debugging. Be aware that this can consume significant disk space.");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_SWAP_RB, L"Swap R/B channels (RGBA <-> BGRA) for Windows compatibility.");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_RETURN_DEBUG, L"Return a debug thumbnail when rendering fails. Useful for debugging");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_USE_DESIRED_SIZE_HINT, L"Let MysticThumbs desired size hint influence render scale.");
 
-			AddTooltip(hTip, hwndDlg, IDC_CFG_MAX_DIM, L"Reject SVGs with width/height larger than this (safety/DoS protection).");
-			AddTooltip(hTip, hwndDlg, IDC_CFG_MAX_BYTES, L"Reject SVGs larger than this many bytes (safety/DoS protection).");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_ENABLE, L"Enable external thumbnailer (\"tool that can create thumbnails\") in case internal rendering fails.");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_PATH, L"Optional external fallback thumbnailer executable path.");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_BROWSE, L"Pick an external thumbnailer executable.");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_PARAMS, L"Command-line parameters for the external thumbnailer.");
 
-			AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_ENABLE, L"Enable external thumbnailer (\"tool that can create thumbnails\") in case internal rendering fails.");
-			AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_PATH, L"Optional external fallback thumbnailer executable path.");
-			AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_BROWSE, L"Pick an external thumbnailer executable.");
-			AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_PARAMS, L"Command-line parameters for the external thumbnailer.");
-
-			AddTooltip(hTip, hwndDlg, IDC_CFG_NORM_ROOT_FILL_WHITE, L"Normalize: force root element fill to white.");
-			AddTooltip(hTip, hwndDlg, IDC_CFG_NORM_RGBA_ATTR, L"Normalize: add/adjust RGBA attributes.");
-			AddTooltip(hTip, hwndDlg, IDC_CFG_NORM_RGBA_STYLE, L"Normalize: add/adjust RGBA style entries.");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_NORM_ROOT_FILL_WHITE, L"Normalize: force root element fill to white.");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_NORM_RGBA_ATTR, L"Normalize: add/adjust RGBA attributes.");
+				AddTooltip(hTip, hwndDlg, IDC_CFG_NORM_RGBA_STYLE, L"Normalize: add/adjust RGBA style entries.");
+			}
 		}
 
 		return TRUE;

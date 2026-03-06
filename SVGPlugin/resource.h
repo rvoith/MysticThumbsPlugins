@@ -11,10 +11,6 @@
 #define IDC_CFG_USE_DESIRED_SIZE_HINT     2003
 #define IDC_CFG_LEAVE_TEMP                2004
 
-#define IDC_CFG_MAX_DIM                   2010
-#define IDC_CFG_MAX_BYTES                 2011
-
-
 #define IDC_CFG_NORM_ROOT_FILL_WHITE      2020
 #define IDC_CFG_NORM_RGBA_ATTR            2021
 #define IDC_CFG_NORM_RGBA_STYLE           2022
