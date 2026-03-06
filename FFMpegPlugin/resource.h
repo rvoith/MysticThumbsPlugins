@@ -12,12 +12,6 @@
 #define IDC_CFG_MISC_RETURN_DEBUG              2003
 #define IDC_CFG_MISC_USE_DESIRED_SIZE_HINT     2004
 
-// Limits
-#define IDC_CFG_LIMIT_MAX_DIM_LBL              2010
-#define IDC_CFG_LIMIT_MAX_DIM                  2011
-#define IDC_CFG_LIMIT_MAX_BYTES_LBL            2012
-#define IDC_CFG_LIMIT_MAX_BYTES                2013
-
 // External thumbnailer
 #define IDC_CFG_THUMB_PATH_LBL                 2020
 #define IDC_CFG_THUMB_PATH                     2021
