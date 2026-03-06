@@ -1458,10 +1458,10 @@ private:
             plateOpaque = !!GetUInt(hDlg, IDC_DLL_PLATE_OPAQUE, plateOpaque);
             labelScalePct = GetUInt(hDlg, IDC_DLL_LABEL_SCALE_EDIT, labelScalePct);
 
-			(void)root.SetStringValue(REG_TEMPLATE, templ.c_str());
-			(void)root.SetDWORDValue(REG_PLATE_OPACITY, plateOpacity);
-			(void)root.SetDWORDValue(REG_PLATE_OPAQUE, plateOpaque ? 1UL : 0UL);
-			(void)root.SetDWORDValue(REG_LABEL_SCALE, labelScalePct);
+			root.SetStringValue(REG_TEMPLATE, templ.c_str());
+			root.SetDWORDValue(REG_PLATE_OPACITY, plateOpacity);
+			root.SetDWORDValue(REG_PLATE_OPAQUE, plateOpaque ? 1UL : 0UL);
+			root.SetDWORDValue(REG_LABEL_SCALE, labelScalePct);
 		}
 	} config;
 
