@@ -8,6 +8,12 @@
 *.userosscache
 *.sln.docstates
 
+# Dependencies installed by bootstrap script
+External/
+
+# Generated VS integration
+MysticThumbs.ExternalDeps.props
+
 # Build outputs
 **/Debug/
 **/Release/
