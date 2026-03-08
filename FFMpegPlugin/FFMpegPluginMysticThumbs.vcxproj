@@ -111,8 +111,7 @@
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
       <EnableCOMDATFolding>false</EnableCOMDATFolding>
     </Link>
-    <PostBuildEvent />
-  <PreLinkEvent /></ItemDefinitionGroup>
+    <PreLinkEvent /><PostBuildEvent /></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -145,12 +144,7 @@
       <Outputs>
       </Outputs>
     </CustomBuildStep>
-    <PreLinkEvent />
-    <PreLinkEvent>
-      <Message>Auto increment file version</Message>
-    </PreLinkEvent>
-    <PostBuildEvent />
-  </ItemDefinitionGroup>
+    <PreLinkEvent /><PostBuildEvent /></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -168,18 +162,11 @@
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PostBuildEvent />
     <PreBuildEvent>
       <Command>
       </Command>
     </PreBuildEvent>
-    <PostBuildEvent>
-      <Command>CopyFileWithAdminRights "$(TargetPath)" "$(AppData)\MysticThumbs\Plugins\$(PlatformArchitecture)" </Command>
-    </PostBuildEvent>
-    <PostBuildEvent>
-      <Message>Copy release-plugin ("$(TargetPath)") to MysticThumbs local user plugin-directory "$(AppData)\MysticThumbs\Plugins\$(PlatformArchitecture)" </Message>
-    </PostBuildEvent>
-  <PreLinkEvent /></ItemDefinitionGroup>
+    <PreLinkEvent /><PostBuildEvent /></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -197,18 +184,11 @@
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PostBuildEvent />
     <PreBuildEvent>
       <Command>
       </Command>
     </PreBuildEvent>
-    <PostBuildEvent>
-      <Command>CopyFileWithAdminRights "$(TargetPath)" "$(AppData)\MysticThumbs\Plugins\$(PlatformArchitecture)" </Command>
-    </PostBuildEvent>
-    <PostBuildEvent>
-      <Message>Copy release-plugin ("$(TargetPath)") to MysticThumbs local user plugin-directory "$(AppData)\MysticThumbs\Plugins\$(PlatformArchitecture)" </Message>
-    </PostBuildEvent>
-  <PreLinkEvent /></ItemDefinitionGroup>
+    <PreLinkEvent /><PostBuildEvent /></ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\Common\MysticThumbsPlugin.h" />
     <ClInclude Include="..\Common\SharedMysticThumbsPlugin.h" />

@@ -80,6 +80,34 @@ The ExamplePlugin-project should be regarded as the "best practices" for impleme
 
 These plugins in this repo are written to closely follow the philosophy of ExamplePlugin.
 
+## An automatic way to install resvg and ffmpeg toolkits
+
+The upcoming chapters and sections in this documentation, will explain in detail how to install the resvg-toolkit needed by the SVGPlugin, and the ffmpeg-toolkit needed by the FFMpegPlugin. 
+
+But there is an easier way! If you just want to specify the whereabouts of where to save your toolkits, and where you have placed the MysticThumbsPlugin-repo, then this section is for you!
+
+But be aware, this script takes approximately an hour to complete, and the full toolkits uses approximately 2,85 GB of disk space.
+
+In the root of the repo, you will find two files; `install_resvg_and_ffmpeg.cmd` and `install_resvg_and_ffmpeg.ps1`. The .cmd file kicks off the Powershell script .ps1 file with correct settings.
+
+1. Open a *Developer Command Prompt for VS2022* as administrator. This is because the .ps1 file needs access to the Visual Studio 2022 compiler. 
+
+2. Launch the `install_resvg_and_ffmpeg.cmd`. This brings up this dialog box:
+
+   ![User interface of install_resvg_and_ffmpeg](Media/inst_toolkits_01.jpg)
+   Select the directories where you want to store the resvg- and ffmpeg toolkits. resvg itself (all details later, but resvg is a rust-based toolset, which then again is used to create it's C API crates) will typically be stored in the `D:\Dev`-root, and the toolkits that our Visual Studio projects will link to with include- and library directories, are stored in `D:\Toolkit`. You can of course choose any directories you want. 
+   Note that these installations won't interfere with each other, so you don't mess up any existing installations, *unless you use the directories where they already are installed*.
+
+3. Click "Start Setup" to kick of a lengthy download, installation and compilation sequence of both resvg and ffmpeg.
+
+4. The installer is finished, you will see instructions in the generated `install_resvg_and_ffmpeg.log` on how to copy files and adjust the Visual Studio project files.
+
+When finished, you have everything in place and ready to open up SVGPlugin- or FFMpegPlugin projects and build away! 
+
+Ensure that the correct FFMpeg DLL files are placed alongside the VCFFMpegPlug32.mtp- or VCFFMpegPlugin64.mtp file, see section *Ensure the ffmpeg dlls are placed in the same directory as the .mtp file*.
+
+ 
+
 # DLL Plugin
 
 ![DLLPlugin sample](Media/vcdllplugin-sample.jpg)
@@ -246,6 +274,7 @@ resvg is built as a fully static MSVC-compatible library:
     -   MSVC v143
     -   Windows 10/11 SDK
     -   Visual Studio 2026 should also work!
+-   Git for Windows (resvg needs to be cloned)
 -   x64 Native Tools Command Prompt for VS 2022 (these command prompts installs with VS2022)
 -   x86 Native Tools Command Prompt for VS 2022
 
@@ -632,6 +661,17 @@ MysticThumbs has a smart way of separating the 32- and 64-bit DLLs. By having a 
 ![File Explorer shows MysticThumbs Plugins 64 content](Media/mt_16.jpg)
 
 Here you see three .mtp plugins alongside the 64-bit dlls from ffmpeg project that we created previously. I have highlighted the .mtp files yellow, and all the ffmpeg dlls green.
+
+Here is a list of the FFMpeg DLL file names:
+
+avutil-59.dll
+swscale-8.dll
+swresample-5.dll
+avcodec-61.dll
+avformat-61.dll
+avfilter-10.dll
+avdevice-61.dll
+dav1d.dll
 
 ### FFMpeg Plugin Registry Configuration
 
