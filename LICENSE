@@ -1,0 +1,101 @@
+MIT License
+
+Copyright (c) 2026 Voith's CODE
+https://www.vcode.no
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+
+-------------------------------------------------------------------------------
+Project Description
+-------------------------------------------------------------------------------
+
+This repository contains third-party plugins for the MysticThumbs Windows
+thumbnail provider. These plugins extend MysticThumbs with additional
+thumbnail generation capabilities, including but not limited to:
+
+- SVG thumbnails using the resvg rendering library
+- Video and media thumbnails using FFmpeg
+- DLL inspection thumbnails and other experimental generators
+
+The code in this repository is an independent project developed by
+Voith's CODE.
+
+
+-------------------------------------------------------------------------------
+No Affiliation / Disclaimer
+-------------------------------------------------------------------------------
+
+This project is NOT affiliated with, endorsed by, or maintained by the
+MysticThumbs project or its author.
+
+MysticThumbs is developed by MysticCoder Pty Ltd ("MysticCoder") and 
+available at:
+
+    https://mysticcoder.net/mysticthumbs
+
+The plugins contained in this repository are independent extensions that
+use the publicly documented MysticThumbs plugin interface.
+
+The MysticThumbs interface header is copyrighted by MysticCoder and is
+used here only for the purpose of building compatible plugins.
+
+See the original header documentation for further details.
+
+-------------------------------------------------------------------------------
+Third-Party Software
+-------------------------------------------------------------------------------
+
+This project depends on several third-party libraries and components.
+These components are NOT covered by this license and are distributed
+under their own respective licenses.
+
+Examples include (but may not be limited to):
+
+- FFmpeg
+- resvg
+- dav1d
+- libraries provided through vcpkg
+- Windows system libraries
+
+The licenses for these third-party components are provided in the
+directory:
+
+    ThirdPartyLicenses/
+
+Please consult those files for the full license texts and requirements.
+
+
+-------------------------------------------------------------------------------
+FFmpeg Notice
+-------------------------------------------------------------------------------
+
+The FFmpeg-based plugin dynamically links against FFmpeg libraries.
+Users are free to replace the FFmpeg DLLs distributed with the plugin
+with their own builds of FFmpeg if desired, subject to the licensing
+terms of FFmpeg.
+
+
+-------------------------------------------------------------------------------
+Distribution
+-------------------------------------------------------------------------------
+
+When redistributing binaries of these plugins, the distributor is
+responsible for complying with all third-party licenses included in
+the `ThirdPartyLicenses` directory.

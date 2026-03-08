@@ -1,4 +1,11 @@
-//	 FFMpegPluginMysticThumbs.cpp
+//	FFMpegPluginMysticThumbs.cpp
+// FFMpeg MysticThumbs Plugin by Voith's CODE
+// https://www.vcode.no
+//
+// Licensed under the MIT License. See LICENSE file in the project root.
+//
+// This project is not affiliated with MysticThumbs or MysticCoder Pty Ltd.
+
 
 // Avoid the std::max error:
 // error C2589: '(': illegal token on right side of '::'

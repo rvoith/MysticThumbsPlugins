@@ -10,6 +10,14 @@ Last updated: March 8th, 2026
 
 *Examples of SVG, FFMpeg and DLL thumbnails!*
 
+## License
+
+This project is licensed under the MIT License.
+
+See the `LICENSE` file for details.
+
+Third-party licenses for dependencies such as FFmpeg and resvg are provided in the `ThirdPartyLicenses` directory.
+
 # About MysticThumbs
 
 MysticThumbs is a very powerful Windows thumbnail extension framework developed by MysticCoder (<https://www.mysticcoder.net>).
