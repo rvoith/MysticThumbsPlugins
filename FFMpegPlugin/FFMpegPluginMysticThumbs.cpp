@@ -102,10 +102,8 @@ extern "C" {
 
 	static const wchar_t* REG_LEAVE_TEMP = L"LeaveTempFiles";
 	static const wchar_t* REG_SWAP_RB = L"SwapRB";
-	static const wchar_t* REG_RETURN_DEBUG_FFMpeg_TN = L"ReturnDebugFFMpegThumbnail";
+	static const wchar_t* REG_RETURN_DEBUG_FFMPEG_THUMBNAIL = L"ReturnDebugFFMpegThumbnail";
 	static const wchar_t* REG_USE_DESIRED_SIZE_HINT = L"useDesiredSizeHint";
-	static const wchar_t* REG_MAX_FFMpeg_DIM = L"maxFFMpegDim";
-	static const wchar_t* REG_MAX_FFMpeg_BYTES = L"maxFFMpegBytes";
 
 	static const wchar_t* REG_THUMB_ENABLED = L"ThumbEnable";
 	static const wchar_t* REG_THUMB_SUBKEY = L"Thumbnailer";
@@ -136,8 +134,6 @@ extern "C" {
 			bool leaveTempFiles = false;
 			bool returnDebugFFMpegThumbnail = false;
 			bool useDesiredSizeHint = false;
-			DWORD maxFFMpegDim = 4096;
-			DWORD maxFFMpegBytes = 256 * 1024 * 1024;
 
 			// Pixel format toggle:
 			bool swapRB = true;
@@ -170,8 +166,6 @@ extern "C" {
 				swapRB = true;
 				returnDebugFFMpegThumbnail = false;
 				useDesiredSizeHint = false;
-				maxFFMpegDim = 4096;
-				maxFFMpegBytes = 256u * 1024u * 1024u;
 
 				collage4 = false;
 				collageMinSeconds = 8;
@@ -180,13 +174,10 @@ extern "C" {
 				DWORD d = 0;
 				if (root.QueryDWORDValue(REG_LEAVE_TEMP, d) == ERROR_SUCCESS) leaveTempFiles = (d != 0);
 				if (root.QueryDWORDValue(REG_SWAP_RB, d) == ERROR_SUCCESS) swapRB = (d != 0);
-				if (root.QueryDWORDValue(REG_RETURN_DEBUG_FFMpeg_TN, d) == ERROR_SUCCESS) returnDebugFFMpegThumbnail = (d != 0);
+				if (root.QueryDWORDValue(REG_RETURN_DEBUG_FFMPEG_THUMBNAIL, d) == ERROR_SUCCESS) returnDebugFFMpegThumbnail = (d != 0);
 				if (root.QueryDWORDValue(REG_USE_DESIRED_SIZE_HINT, d) == ERROR_SUCCESS) useDesiredSizeHint = (d != 0);
 
-				if (root.QueryDWORDValue(REG_MAX_FFMpeg_DIM, d) == ERROR_SUCCESS) maxFFMpegDim = d;
-				if (root.QueryDWORDValue(REG_MAX_FFMpeg_BYTES, d) == ERROR_SUCCESS) maxFFMpegBytes = d;
-
-				if (root.QueryDWORDValue(REG_COLLAGE_ENABLE, d) == ERROR_SUCCESS) collage4 = (d != 0);
+				if (root.QueryDWORDValue(REG_COLLAGE_ENABLE, d) == ERROR_SUCCESS) collage4 = d;
 				if (root.QueryDWORDValue(REG_COLLAGE_MIN_SECONDS, d) == ERROR_SUCCESS) collageMinSeconds = d;
 
 				// External thumbnailer
@@ -223,11 +214,8 @@ extern "C" {
 
 				(void)root.SetDWORDValue(REG_LEAVE_TEMP, leaveTempFiles ? 1u : 0u);
 				(void)root.SetDWORDValue(REG_SWAP_RB, swapRB ? 1u : 0u);
-				(void)root.SetDWORDValue(REG_RETURN_DEBUG_FFMpeg_TN, returnDebugFFMpegThumbnail ? 1u : 0u);
+				(void)root.SetDWORDValue(REG_RETURN_DEBUG_FFMPEG_THUMBNAIL, returnDebugFFMpegThumbnail ? 1u : 0u);
 				(void)root.SetDWORDValue(REG_USE_DESIRED_SIZE_HINT, useDesiredSizeHint ? 1u : 0u);
-
-				(void)root.SetDWORDValue(REG_MAX_FFMpeg_DIM, maxFFMpegDim);
-				(void)root.SetDWORDValue(REG_MAX_FFMpeg_BYTES, maxFFMpegBytes);
 
 				(void)root.SetDWORDValue(REG_COLLAGE_ENABLE, collage4 ? 1u : 0u);
 				(void)root.SetDWORDValue(REG_COLLAGE_MIN_SECONDS, collageMinSeconds);
@@ -254,7 +242,7 @@ public:
 		const IMysticThumbsPluginContext* GetContext() const
 		{
 			return m_context;
-		}
+		} 
 
 		virtual LPCWSTR GetName() const override
 		{
@@ -933,8 +921,6 @@ public:
 			const std::wstring& mediaPath,
 			unsigned int desiredSize,       // overall output size (square)
 			bool useDesiredSize,
-			unsigned int maxDim,
-			size_t maxBytes,
 			bool& hasAlpha,
 			unsigned int& width,
 			unsigned int& height)
@@ -948,8 +934,8 @@ public:
 			unsigned int outW = desiredSize;
 			unsigned int outH = desiredSize;
 
-			if (!useDesiredSize && maxDim > 0)
-				outW = outH = std::min(desiredSize, maxDim);
+			if (!useDesiredSize)
+				outW = outH = desiredSize;
 
 			// Tile size (2x2)
 			const unsigned int tileW = std::max(1u, outW / 2);
@@ -957,9 +943,6 @@ public:
 
 			// Memory cap check
 			const size_t bufSize = (size_t)outW * (size_t)outH * 4;
-			if (maxBytes == 0) maxBytes = 256ull * 1024ull * 1024ull;
-			if (bufSize > maxBytes)
-				return nullptr;
 
 			// FFmpeg open (file only)
 			AVDictionary* opts = nullptr;
@@ -1172,8 +1155,6 @@ public:
 			const std::wstring& mediaPath,
 			unsigned int desiredSize,
 			bool useDesiredSize,
-			unsigned int maxDim,
-			size_t maxBytes,
 			bool& hasAlpha,
 			unsigned int& width,
 			unsigned int& height)
@@ -1502,23 +1483,6 @@ public:
 			{
 				(void)ComputeFit(srcW, srcH, desiredSize, dstW, dstH);
 			}
-			else if (maxDim > 0)
-			{
-				const unsigned int maxSrc = (srcW > srcH) ? srcW : srcH;
-				if (maxSrc > maxDim)
-					(void)ComputeFit(srcW, srcH, maxDim, dstW, dstH);
-			}
-
-			// Safety cap
-			if (maxDim > 0)
-			{
-				dstW = std::min(dstW, maxDim);
-				dstH = std::min(dstH, maxDim);
-			}
-
-			// Default memory cap
-			if (maxBytes == 0)
-				maxBytes = 256ull * 1024ull * 1024ull;
 
 			const size_t w = (size_t)dstW;
 			const size_t h = (size_t)dstH;
@@ -1541,15 +1505,6 @@ public:
 				return nullptr;
 			}
 			const size_t bufSize = (w * 4) * h;
-			if (bufSize > maxBytes)
-			{
-				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: refusing allocation bufSize=%lld, maxBytes=%lld ((out=%ldx%ld)", m_logTag.Tag(), (unsigned long long)bufSize, (unsigned long long)maxBytes, dstW, dstH);
-				av_packet_free(&pkt);
-				av_frame_free(&frame);
-				avcodec_free_context(&cc);
-				avformat_close_input(&fmt);
-				return nullptr;
-			}
 
 			unsigned char* out = (unsigned char*)LocalAlloc(LMEM_FIXED, bufSize);
 			if (!out)
@@ -1666,8 +1621,6 @@ public:
 
 			// Stage 2: FFmpeg decode (primary)
 			const bool useDesiredSize = config.useDesiredSizeHint; // Should we respect desiredSize hint?
-			const unsigned int maxDim = config.maxFFMpegDim;          // Max FFMpeg dimension
-			const size_t maxBytes = config.maxFFMpegBytes;            // Max FFMpeg memory consumption, MAX CAP!
 
 			unsigned char* buffer = nullptr;
 
@@ -1677,8 +1630,6 @@ public:
 					mediaPath,
 					desiredSize,
 					config.useDesiredSizeHint,
-					config.maxFFMpegDim,
-					config.maxFFMpegBytes,
 					hasAlpha,
 					width,
 					height);
@@ -1690,8 +1641,6 @@ public:
 					mediaPath,
 					desiredSize,
 					config.useDesiredSizeHint,
-					config.maxFFMpegDim,
-					config.maxFFMpegBytes,
 					hasAlpha,
 					width,
 					height);
@@ -1791,9 +1740,6 @@ public:
 			SetCheck(hwndDlg, IDC_CFG_MISC_RETURN_DEBUG, c.returnDebugFFMpegThumbnail);
 			SetCheck(hwndDlg, IDC_CFG_MISC_USE_DESIRED_SIZE_HINT, c.useDesiredSizeHint);
 
-			SetUInt(hwndDlg, IDC_CFG_LIMIT_MAX_DIM, c.maxFFMpegDim);
-			SetUInt(hwndDlg, IDC_CFG_LIMIT_MAX_BYTES, c.maxFFMpegBytes);
-
 			SetText(hwndDlg, IDC_CFG_THUMB_PATH, c.thumbPath);
 			SetText(hwndDlg, IDC_CFG_THUMB_PARAMS, c.thumbParams);
 
@@ -1801,32 +1747,29 @@ public:
 			SetUInt(hwndDlg, IDC_CFG_COLLAGE_MIN_SECONDS, c.collageMinSeconds);
 
 			// Tooltips
-			HWND hTip = CreateWindowExW(0, TOOLTIPS_CLASSW, nullptr,
-				WS_POPUP | TTS_ALWAYSTIP | TTS_BALLOON,
-				CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-				hwndDlg, nullptr, g_hModule, nullptr);
-			if (hTip)
-			{
-				SendMessageW(hTip, TTM_SETMAXTIPWIDTH, 0, 420);
+			if(plugin->m_context->TooltipsEnabled()) {
+				HWND hTip = CreateWindowExW(0, TOOLTIPS_CLASSW, nullptr,
+											WS_POPUP | TTS_ALWAYSTIP | TTS_BALLOON,
+											CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+											hwndDlg, nullptr, g_hModule, nullptr);
+				if(hTip) {
+					SendMessageW(hTip, TTM_SETMAXTIPWIDTH, 0, 420);
 
 
-				AddTooltip(hTip, hwndDlg, IDC_CFG_MISC_LEAVE_TEMP, L"Keep temporary extracted/converted files. Useful when debugging. Be aware that this can consume significant disk space.");
-				AddTooltip(hTip, hwndDlg, IDC_CFG_MISC_SWAP_RB, L"Swap R/B channels (RGBA <-> BGRA) for Windows compatibility.");
-				AddTooltip(hTip, hwndDlg, IDC_CFG_MISC_RETURN_DEBUG, L"Return a debug thumbnail when rendering fails. Useful for debugging");
-				AddTooltip(hTip, hwndDlg, IDC_CFG_MISC_USE_DESIRED_SIZE_HINT, L"Let MysticThumbs desired size hint influence render scale.");
+					AddTooltip(hTip, hwndDlg, IDC_CFG_MISC_LEAVE_TEMP, L"Keep temporary extracted/converted files. Useful when debugging. Be aware that this can consume significant disk space.");
+					AddTooltip(hTip, hwndDlg, IDC_CFG_MISC_SWAP_RB, L"Swap R/B channels (RGBA <-> BGRA) for Windows compatibility.");
+					AddTooltip(hTip, hwndDlg, IDC_CFG_MISC_RETURN_DEBUG, L"Return a debug thumbnail when rendering fails. Useful for debugging");
+					AddTooltip(hTip, hwndDlg, IDC_CFG_MISC_USE_DESIRED_SIZE_HINT, L"Let MysticThumbs desired size hint influence render scale.");
 
-				AddTooltip(hTip, hwndDlg, IDC_CFG_LIMIT_MAX_DIM, L"Reject media files with width/height larger than this (safety/DoS protection).");
-				AddTooltip(hTip, hwndDlg, IDC_CFG_LIMIT_MAX_BYTES, L"Reject media files larger than this many bytes (safety/DoS protection).");
+					//AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_ENABLE, L"Enable external thumbnailer (\"tool that can create thumbnails\") in case internal rendering fails.");
+					AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_PATH, L"Optional external fallback thumbnailer executable path.");
+					AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_BROWSE, L"Pick an external thumbnailer executable.");
+					AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_PARAMS, L"Command-line parameters for the external thumbnailer.");
 
-				//				AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_ENABLE, L"Enable external thumbnailer (\"tool that can create thumbnails\") in case internal rendering fails.");
-				AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_PATH, L"Optional external fallback thumbnailer executable path.");
-				AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_BROWSE, L"Pick an external thumbnailer executable.");
-				AddTooltip(hTip, hwndDlg, IDC_CFG_THUMB_PARAMS, L"Command-line parameters for the external thumbnailer.");
-
-				AddTooltip(hTip, hwndDlg, IDC_CFG_COLLAGE_ENABLE, L"Render thumbnail with 4 snapshots instead of one");
-				AddTooltip(hTip, hwndDlg, IDC_CFG_COLLAGE_MIN_SECONDS, L"Minimum length of video before attempting to create collage");
+					AddTooltip(hTip, hwndDlg, IDC_CFG_COLLAGE_ENABLE, L"Render thumbnail with 4 snapshots instead of one");
+					AddTooltip(hTip, hwndDlg, IDC_CFG_COLLAGE_MIN_SECONDS, L"Minimum length of video before attempting to create collage");
+				}
 			}
-
 
 			return TRUE;
 		}

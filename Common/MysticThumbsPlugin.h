@@ -29,6 +29,10 @@
 // Version 4: Overhauled how a lot of functions work.
 //            LocalAlloc / StrDup no longer needed for GetName, GetExtension
 //              etc. calls. Strings are copied by the caller.
+//            Removed Initialize and Shutdown calls because they may have been
+//              called out of order if multiple processes are holding references.
+//              Consider using an atomoc instance count in your plugin to handle
+//              global initialization and cleanup if needed.
 // 
 // 
 // Visual Studio / C++ / ATL and implementation notes:
@@ -365,10 +369,14 @@ public:
 typedef int (*MTP_Version)();
 
 // Initialize the plugin. Any initialization required for all instances can be done here.
-typedef bool (*MTP_Initialize)();
+// Removed in version 4. Use the plugin's DllMain instead (but only for Kernel32.dll calls.)
+// If wanting to initialize cached "global" items, consider tracking instances and
+// initializing on first instance creation and cleaning up on final instance deletion.
+//typedef bool (*MTP_Initialize)();
 
 // Shutdown the plugin. Clean up everything when the plugin is being unloaded.
-typedef bool (*MTP_Shutdown)();
+// Removed in version 4.
+//typedef bool (*MTP_Shutdown)();
 
 // MTP_CreateInstance changed removed since VERSION 3.
 // Should be fine since MTP_Version exists to identify version and creation will early exit if not version 3 or newer.

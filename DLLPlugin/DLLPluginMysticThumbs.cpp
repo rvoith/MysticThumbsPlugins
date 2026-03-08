@@ -43,7 +43,7 @@ static const wchar_t* REG_PLATE_OPACITY = L"PlateOpacity";   // DWORD 0..100
 static const wchar_t* REG_PLATE_OPAQUE = L"PlateOpaque";    // DWORD 0/1
 static const wchar_t* REG_LABEL_SCALE = L"LabelScalePct";  // DWORD e.g. 75 means 75%
 
-// Defaults
+// Default semi-HTML template for the label on the plaque
 static const wchar_t* DEFAULT_TEMPLATE =
 L"<center>$(DllFileType)</center>\r\n"
 L"<center><strong>$(DLLFileVersionAsText)</strong></center>\r\n"
@@ -53,9 +53,10 @@ L"<tiny>$(VI_FileDescriptionFirstSentence)</tiny>\r\n";
 // Direct2D / DirectWrite factories (process-wide)
 // -----------------------------------------------------------------------------
 static CComPtr<ID2D1Factory> g_d2d;
-static CComPtr < IDWriteFactory> g_dw;
+static CComPtr<IDWriteFactory> g_dw;
 
 static HMODULE g_hModule = nullptr;
+static std::atomic_int s_instanceCount;
 
 // Plugin metadata
 static const wchar_t* s_name = L"Voith's CODE DLL Plugin";
@@ -378,8 +379,6 @@ static bool IsFileAuthenticodeSigned(const std::wstring& path)
 
 	return status == ERROR_SUCCESS;
 }
-
-
 
 
 // -----------------------------------------------------------------------------
@@ -1357,14 +1356,13 @@ static void DrawDigitalSignedShield(
 
 	// Fill + outline
 	rt->FillGeometry(geo, fill);
-	if (stroke) rt->DrawGeometry(geo, stroke, strokeW);
+	if(stroke) rt->DrawGeometry(geo, stroke, strokeW);
 
 	// Optional: subtle inner highlight line down the center (adds "life")
 	// Comment out if you want it flatter.
 	CComPtr<ID2D1SolidColorBrush> highlight;
 	rt->CreateSolidColorBrush(D2D1::ColorF(1.f, 1.f, 1.f, 0.10f), &highlight);
-	if (highlight)
-	{
+	if(highlight) {
 		rt->DrawLine(
 			D2D1::Point2F(x + s * 0.50f, y + s * 0.18f),
 			D2D1::Point2F(x + s * 0.50f, y + s * 0.82f),
@@ -1405,56 +1403,74 @@ private:
 			ATLASSUME(context);
 
 			HKEY hRoot = context ? context->GetPluginRegistryRootKey() : nullptr;
-			if (!hRoot)
+			if(!hRoot)
 				return;
 
 			// IMPORTANT: Do not close MysticThumbs' HKEY. 
 			CRegKeyHelper<false> root(hRoot);
-			DWORD d = 0;
+            DWORD v = 0; // generic temp DWORD for queries for boolean etc.
 
-			// Template
-			(void)root.QueryStringValue(REG_TEMPLATE, templ);
-			if (templ.empty())
-				templ = DEFAULT_TEMPLATE;
+			// Ctrl+click "Reset to defaults" behavior. Maybe mention this on the dialog or tooltip somewhere.
+            bool loadDefaults = GetAsyncKeyState(VK_CONTROL) < 0;
 
-			// Plate opacity
-			plateOpacity = 55;
-			DWORD v{};
-			if (root.QueryDWORDValue(REG_PLATE_OPACITY, v) == ERROR_SUCCESS)
-				plateOpacity = std::clamp(v, 0UL, 100UL);
+			// Set the defaults first
+            templ = DEFAULT_TEMPLATE;
+            plateOpacity = 55;
+            plateOpaque = false;
+            labelScalePct = 75;
 
-			// Plate opaque
-			plateOpaque = false;
-			v = 0;
-			if (root.QueryDWORDValue(REG_PLATE_OPAQUE, v) == ERROR_SUCCESS)
-				plateOpaque = (v != 0);
+			// Load saved if required.
+			if(!loadDefaults) {
+				// Template
+				(void)root.QueryStringValue(REG_TEMPLATE, templ);
+				if(templ.empty()) // User may have cleared it on last save. If so, reset to default.
+					templ = DEFAULT_TEMPLATE;
 
-			// Label scale
-			labelScalePct = 75;
-			v = 0;
-			if (root.QueryDWORDValue(REG_LABEL_SCALE, v) == ERROR_SUCCESS)
-				labelScalePct = std::clamp(v, 50UL, 100UL);
+				// Plate opacity
+				if(root.QueryDWORDValue(REG_PLATE_OPACITY, plateOpacity) == ERROR_SUCCESS)
+					plateOpacity = std::clamp(plateOpacity, 0UL, 100UL);
+
+				// Plate opaque
+				if(root.QueryDWORDValue(REG_PLATE_OPAQUE, v) == ERROR_SUCCESS)
+					plateOpaque = !!v;
+
+				// Label scale
+				if(root.QueryDWORDValue(REG_LABEL_SCALE, labelScalePct) == ERROR_SUCCESS)
+					labelScalePct = std::clamp(labelScalePct, 50UL, 100UL);
+			}
 		}
 
-		void Save(HWND hDlg) const
+		void Save(HWND hDlg)
 		{
 			ATLASSUME(context);
 
-			HKEY hRoot = context ? context->GetPluginRegistryRootKey() : nullptr;
-			if (!hRoot)
-				return;
+            HKEY hRoot = context ? context->GetPluginRegistryRootKey() : nullptr;
+            if(!hRoot)
+                return;
 
-			CRegKeyHelper<false> root(hRoot);
+            CRegKeyHelper<false> root(hRoot);
 
-			(void)root.SetStringValue(REG_TEMPLATE, templ.c_str());
+			// Need to reflect here
+			templ = GetText(hDlg, IDC_DLL_TEMPLATE_EDIT);
+            plateOpacity = GetUInt(hDlg, IDC_DLL_PLATE_OPACITY_EDIT, plateOpacity);
+            plateOpaque = !!GetUInt(hDlg, IDC_DLL_PLATE_OPAQUE, plateOpaque);
+            labelScalePct = GetUInt(hDlg, IDC_DLL_LABEL_SCALE_EDIT, labelScalePct);
 
-			(void)root.SetDWORDValue(REG_PLATE_OPACITY, plateOpacity);
-			(void)root.SetDWORDValue(REG_PLATE_OPAQUE, plateOpaque ? 1UL : 0UL);
-			(void)root.SetDWORDValue(REG_LABEL_SCALE, labelScalePct);
+			root.SetStringValue(REG_TEMPLATE, templ.c_str());
+			root.SetDWORDValue(REG_PLATE_OPACITY, plateOpacity);
+			root.SetDWORDValue(REG_PLATE_OPAQUE, plateOpaque ? 1UL : 0UL);
+			root.SetDWORDValue(REG_LABEL_SCALE, labelScalePct);
 		}
 	} config;
 
 	static INT_PTR CALLBACK ConfigureDialogProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+
+	virtual ~CDLLPlugin() {
+		if(--s_instanceCount == 0) {
+            g_dw.Release();
+            g_d2d.Release();
+		}
+	}
 
 public:
 	explicit CDLLPlugin(_In_ IMysticThumbsPluginContext* context)
@@ -2084,19 +2100,19 @@ INT_PTR CALLBACK CDLLPlugin::ConfigureDialogProc(HWND hwndDlg, UINT uMsg, WPARAM
 		SetFocus((HWND)wParam);
 
 		// Tooltips
-		HWND hTip = CreateWindowExW(0, TOOLTIPS_CLASSW, nullptr,
-			WS_POPUP | TTS_ALWAYSTIP | TTS_BALLOON,
-			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-			hwndDlg, nullptr, g_hModule, nullptr);
-		if (hTip)
-		{
-			SendMessageW(hTip, TTM_SETMAXTIPWIDTH, 0, 420);
-			AddTooltip(hTip, hwndDlg, IDC_DLL_TEMPLATE_EDIT, L"The template to use for the content of the thumbnail. Variables and semi-HTML OK! See documentation for more information");
-			AddTooltip(hTip, hwndDlg, IDC_DLL_PLATE_OPAQUE, L"Turn on or off opaque plaque");
-			AddTooltip(hTip, hwndDlg, IDC_DLL_PLATE_OPACITY_EDIT, L"How opaque the plate should be? (0-100%).");
-			AddTooltip(hTip, hwndDlg, IDC_DLL_LABEL_SCALE_EDIT, L"How large should the plaque be? (0-100%).");
+		if(plugin->m_context->TooltipsEnabled()) {
+			HWND hTip = CreateWindowExW(0, TOOLTIPS_CLASSW, nullptr,
+										WS_POPUP | TTS_ALWAYSTIP | TTS_BALLOON,
+										CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+										hwndDlg, nullptr, g_hModule, nullptr);
+			if(hTip) {
+				SendMessageW(hTip, TTM_SETMAXTIPWIDTH, 0, 420);
+				AddTooltip(hTip, hwndDlg, IDC_DLL_TEMPLATE_EDIT, L"The template to use for the content of the thumbnail. Variables and semi-HTML OK! See documentation for more information");
+				AddTooltip(hTip, hwndDlg, IDC_DLL_PLATE_OPAQUE, L"Turn on or off opaque plaque");
+				AddTooltip(hTip, hwndDlg, IDC_DLL_PLATE_OPACITY_EDIT, L"How opaque the plate should be? (0-100%).");
+				AddTooltip(hTip, hwndDlg, IDC_DLL_LABEL_SCALE_EDIT, L"How large should the plaque be? (0-100%).");
+			}
 		}
-
 
 		return FALSE;
 	}
@@ -2140,31 +2156,21 @@ extern "C" DLLPLUGIN_API int Version()
 	return MYSTICTHUMBS_PLUGIN_VERSION;
 }
 
-extern "C" DLLPLUGIN_API bool Initialize()
-{
-	HRESULT hr;
-
-	ATLVERIFY(!g_d2d);
-	/*ATLENSURE_SUCCEEDED*/(hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, &g_d2d));
-	if (FAILED(hr)) return false;
-
-	ATLVERIFY(!g_dw);
-	/*ATLENSURE_SUCCEEDED*/(hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
-		reinterpret_cast<IUnknown**>(&g_dw)));
-	if (FAILED(hr)) return false;
-
-	return true;
-}
-
-extern "C" DLLPLUGIN_API bool Shutdown()
-{
-	g_dw.Release();
-	g_d2d.Release();
-	return true;
-}
-
 extern "C" DLLPLUGIN_API IMysticThumbsPlugin* CreateInstance(_In_ IMysticThumbsPluginContext* context)
 {
+	if(s_instanceCount++ == 0) {
+        HRESULT hr;
+
+        /*ATLENSURE_SUCCEEDED*/(hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, &g_d2d));
+
+        ATLVERIFY(!g_dw);
+        /*ATLENSURE_SUCCEEDED*/(hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+                                                         reinterpret_cast<IUnknown**>(&g_dw)));
+	}
+    if(!g_d2d || !g_dw)	{
+		return nullptr;
+	}
+
 	CDLLPlugin* plugin = (CDLLPlugin*)CoTaskMemAlloc(sizeof(CDLLPlugin));
 	if (!plugin) return nullptr;
 
@@ -2188,4 +2194,4 @@ DLLPLUGIN_API BOOL APIENTRY DllMain(HINSTANCE hModule, DWORD reason, void*)
 	if (reason == DLL_PROCESS_ATTACH)
 		g_hModule = hModule;
 	return TRUE;
-}
+} 
