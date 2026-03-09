@@ -4,11 +4,13 @@
 
 Plugin development for MysticThumbs - The SVG-, FFMpeg and DLL plugins
 
-Last updated: March 8th, 2026
+Last updated: March 9th, 2026
 
 ![SVGplugin sample](Media/vcsvgplugin-sample.jpg) ![FFMpegplugin sample](Media/vcffmpegplugin-sample.jpg) ![DLLPlugin sample](Media/vcdllplugin-sample.jpg)
 
 *Examples of SVG, FFMpeg and DLL thumbnails!*
+
+Interested in the background on how I got interested in developing plugins for MysticThumbs? Head over to my blog on bobsplace.no and  [Want beautiful thumbnails in Windows? How to write your own plugins for MysticThumbs](https://www.bobsplace.no/how-to-write-mysticthumbs-plugins/)
 
 ## License
 
@@ -99,11 +101,14 @@ But there is an easier way! In the root of the repo, you will find two files; `i
 2. Launch the `install_resvg_and_ffmpeg.cmd`. This brings up this dialog box:
 
    ![User interface of install_resvg_and_ffmpeg](Media/inst_toolkits_01.jpg)
-   The setup script will use the current directory where you have cloned the repo. In the screen shot above, the local repo is stored in `D:\git\MysticThumbsPlugins`. 
-   The script will automatically create an `External`-sub directory and download and build resvg- and ffmpeg locally there. 
-   Further, the script will create a local `MysticThumbs.ExternalDeps.props` file which will point to the External-directories. 
-   Finally it will inject these directories into your SVG- and FFMpeg .vcxproj files and thus make them ready for your to build.
-
+   
+3. The setup script will do the following:
+   1. Use the current directory where you have cloned the repo. In the screen shot above, the local repo is stored in `D:\git\MysticThumbsPlugins`. 
+   2. Create an `External`-sub directory and download and build resvg- and ffmpeg locally there. 
+   3. Create a local Visual Studio props file named `MysticThumbs.ExternalDeps.props`  which will point to the External-directories. 
+   4. Inject these directories into your SVG- and FFMpeg .vcxproj files and thus make them ready for your to build.
+   5. Automatically copy the ffmpeg-generated runtime DLL files to their correct MysticThumbs directories
+   
 3. Click "Start Setup" to kick of a somewhat lengthy download, installation and compilation sequence of both resvg and ffmpeg. It all cooks down to your network speed and computer power :-)
    Note that an ordinary resvg and ffmpeg install will occupy approximately 1 GB of disk space.
 
@@ -112,8 +117,6 @@ But there is an easier way! In the root of the repo, you will find two files; `i
    You can see all the details in the generated `install_resvg_and_ffmpeg.log`. 
 
 When finished, you have everything in place and ready to open up SVGPlugin- or FFMpegPlugin projects and build away! 
-
-Ensure that the correct FFMpeg DLL files are placed alongside the VCFFMpegPlug32.mtp- or VCFFMpegPlugin64.mtp file, see section *Ensure the ffmpeg dlls are placed in the same directory as the .mtp file*.
 
 # DLL Plugin
 

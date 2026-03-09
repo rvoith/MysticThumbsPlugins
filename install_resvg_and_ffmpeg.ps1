@@ -1,112 +1,84 @@
+
 Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = "Stop"
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$RepoRoot = $ScriptRoot
-$ExternalRoot = Join-Path $RepoRoot 'External'
-$ExternalSrcRoot = Join-Path $ExternalRoot 'src'
-$ResvgRepoRoot = Join-Path $ExternalSrcRoot 'resvg'
-$ResvgInstallRoot = Join-Path $ExternalRoot 'resvg\resvg-capi'
-$VcpkgRoot = Join-Path $ExternalRoot 'vcpkg'
-$PropsPath = Join-Path $RepoRoot 'MysticThumbs.ExternalDeps.props'
-$LogPath = Join-Path $RepoRoot 'install_resvg_and_ffmpeg.log'
+$ScriptPath = $MyInvocation.MyCommand.Path
+$RepoRoot   = Split-Path -Parent $ScriptPath
+$LogPath    = Join-Path $RepoRoot "install_resvg_and_ffmpeg.log"
 
-Set-Content -Path $LogPath -Value '' -Encoding utf8
+$ExternalRoot   = Join-Path $RepoRoot "External"
+$ExternalSrc    = Join-Path $ExternalRoot "src"
+$ResvgSrc       = Join-Path $ExternalSrc "resvg"
+$ResvgInstall   = Join-Path $ExternalRoot "resvg\resvg-capi"
+$ResvgX64       = Join-Path $ResvgInstall "x64"
+$ResvgX86       = Join-Path $ResvgInstall "x86"
+$VcpkgRoot      = Join-Path $ExternalRoot "vcpkg"
+$PropsPath      = Join-Path $RepoRoot "MysticThumbs.ExternalDeps.props"
+
+$FFmpegDllPatterns = @(
+    "avutil-*.dll",
+    "swscale-*.dll",
+    "swresample-*.dll",
+    "avcodec-*.dll",
+    "avformat-*.dll",
+    "avfilter-*.dll",
+    "avdevice-*.dll",
+    "dav1d.dll"
+)
+
+$SummaryLines = New-Object System.Collections.Generic.List[string]
 
 function Write-Log {
     param(
         [Parameter(Mandatory = $true)][string]$Message,
-        [ConsoleColor]$Color = 'White'
+        [ConsoleColor]$Color = [ConsoleColor]::Gray
     )
-    $timestamp = Get-Date -Format 'HH:mm:ss'
-    $line = "[$timestamp] $Message"
+    $line = "[{0}] {1}" -f (Get-Date -Format "HH:mm:ss"), $Message
     Write-Host $line -ForegroundColor $Color
-    $line | Out-File -FilePath $LogPath -Append -Encoding utf8
+    Add-Content -LiteralPath $LogPath -Value $line -Encoding UTF8
 }
 
-function Test-IsAdmin {
-    $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = [System.Security.Principal.WindowsPrincipal]::new($identity)
-    return $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
-}
-
-
-function Get-RelativePathCompat {
-    param(
-        [Parameter(Mandatory = $true)][string]$BasePath,
-        [Parameter(Mandatory = $true)][string]$TargetPath
-    )
-
-    $baseFull = [System.IO.Path]::GetFullPath($BasePath)
-    $targetFull = [System.IO.Path]::GetFullPath($TargetPath)
-
-    if (-not $baseFull.EndsWith('\')) {
-        $baseFull += '\'
-    }
-
-    $baseUri = New-Object System.Uri($baseFull)
-    $targetUri = New-Object System.Uri($targetFull)
-    $relativeUri = $baseUri.MakeRelativeUri($targetUri)
-    $relativePath = [System.Uri]::UnescapeDataString($relativeUri.ToString())
-
-    return $relativePath.Replace('/', '\')
-}
-
-
-function Get-ExpectedProjectPath {
-    param(
-        [Parameter(Mandatory = $true)][string]$RelativePath
-    )
-
-    $projectPath = Join-Path $RepoRoot $RelativePath
-    if (Test-Path -LiteralPath $projectPath) {
-        return $projectPath
-    }
-    return $null
+function Add-Summary {
+    param([string]$Line)
+    [void]$SummaryLines.Add($Line)
 }
 
 function Ensure-Directory {
     param([Parameter(Mandatory = $true)][string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) {
-        New-Item -ItemType Directory -Path $Path -Force | Out-Null
+        [void](New-Item -ItemType Directory -Path $Path -Force)
     }
 }
 
-function Assert-Command {
-    param(
-        [Parameter(Mandatory = $true)][string]$Name,
-        [string]$HelpText = ''
-    )
-    if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
-        if ($HelpText) {
-            throw "$Name was not found. $HelpText"
-        }
-        throw "$Name was not found on PATH."
-    }
-}
+function Join-Args {
+    param([string[]]$Arguments)
+    if (-not $Arguments -or $Arguments.Count -eq 0) { return "" }
 
-function Invoke-External {
-    param(
-        [Parameter(Mandatory = $true)][string]$FilePath,
-        [string[]]$ArgumentList = @(),
-        [string]$WorkingDirectory = $RepoRoot,
-        [switch]$AllowNonZeroExit
-    )
-
-    $argString = (($ArgumentList | ForEach-Object {
-        $arg = [string]$_
+    $parts = foreach ($arg in $Arguments) {
+        if ($null -eq $arg) { continue }
         if ($arg -match '[\s"]') {
             '"' + ($arg -replace '"', '\"') + '"'
-        }
-        else {
+        } else {
             $arg
         }
-    }) -join ' ')
+    }
+    return ($parts -join ' ')
+}
 
-    Write-Log ("RUN: {0} {1}" -f $FilePath, $argString) DarkGray
+function Invoke-LoggedProcess {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [string[]]$Arguments = @(),
+        [string]$WorkingDirectory = $RepoRoot,
+        [hashtable]$Environment = @{},
+        [switch]$IgnoreExitCode
+    )
+
+    $argString = Join-Args $Arguments
+    Write-Log ("RUN: {0} {1}" -f $FilePath, $argString) Cyan
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $FilePath
@@ -117,604 +89,701 @@ function Invoke-External {
     $psi.RedirectStandardError = $true
     $psi.CreateNoWindow = $true
 
+    foreach ($key in $Environment.Keys) {
+        $psi.EnvironmentVariables[$key] = [string]$Environment[$key]
+    }
+
     $proc = New-Object System.Diagnostics.Process
     $proc.StartInfo = $psi
-    [void]$proc.Start()
 
+    [void]$proc.Start()
     $stdout = $proc.StandardOutput.ReadToEnd()
     $stderr = $proc.StandardError.ReadToEnd()
     $proc.WaitForExit()
 
     if ($stdout) {
-        $stdout -split "`r?`n" | ForEach-Object {
-            if ($_ -ne '') { Write-Log $_ Gray }
+        foreach ($line in ($stdout -split "`r?`n")) {
+            if ($line -ne "") { Write-Log $line DarkGray }
         }
     }
     if ($stderr) {
-        $stderr -split "`r?`n" | ForEach-Object {
-            if ($_ -ne '') { Write-Log $_ Yellow }
+        foreach ($line in ($stderr -split "`r?`n")) {
+            if ($line -ne "") { Write-Log $line Yellow }
         }
     }
 
-    if (-not $AllowNonZeroExit -and $proc.ExitCode -ne 0) {
+    if (-not $IgnoreExitCode -and $proc.ExitCode -ne 0) {
         throw "Command failed with exit code $($proc.ExitCode): $FilePath $argString"
     }
+
     return $proc.ExitCode
 }
 
-function Ensure-GitCloneOrPull {
+function Assert-Command {
     param(
-        [Parameter(Mandatory = $true)][string]$RepoUrl,
-        [Parameter(Mandatory = $true)][string]$DestinationPath
+        [Parameter(Mandatory = $true)][string]$CommandName,
+        [Parameter(Mandatory = $true)][string]$FriendlyName
     )
-
-    if (Test-Path -LiteralPath (Join-Path $DestinationPath '.git')) {
-        Write-Log "Updating existing repository: $DestinationPath" Cyan
-        Invoke-External -FilePath 'git' -ArgumentList @('-C', $DestinationPath, 'pull', '--ff-only')
-    }
-    else {
-        Ensure-Directory -Path (Split-Path -Parent $DestinationPath)
-        Write-Log "Cloning repository: $RepoUrl" Cyan
-        Invoke-External -FilePath 'git' -ArgumentList @('clone', $RepoUrl, $DestinationPath)
+    if (-not (Get-Command $CommandName -ErrorAction SilentlyContinue)) {
+        throw "$FriendlyName was not found in PATH. Please run this from a Developer Command Prompt for VS2022 and ensure $FriendlyName is installed."
     }
 }
 
-function Ensure-RustToolchain {
-    $cargoCmd = Get-Command cargo -ErrorAction SilentlyContinue
-    if (-not $cargoCmd) {
-        $rustupExe = Join-Path $ExternalRoot 'rustup-init.exe'
-        if (-not (Test-Path -LiteralPath $rustupExe)) {
-            Write-Log 'Downloading rustup-init.exe...' Cyan
-            Invoke-WebRequest -Uri 'https://win.rustup.rs/x86_64' -OutFile $rustupExe
-        }
+function Install-RustIfMissing {
+    if (Get-Command cargo -ErrorAction SilentlyContinue) { return }
 
-        Write-Log 'Installing Rust MSVC toolchain...' Cyan
-        Invoke-External -FilePath $rustupExe -ArgumentList @('-y', '--default-toolchain', 'stable') -WorkingDirectory $ExternalRoot
+    Write-Log "cargo was not found. Installing Rust toolchain..." Yellow
+    $rustupExe = Join-Path $env:TEMP "rustup-init.exe"
 
-        $cargoBin = Join-Path $env:USERPROFILE '.cargo\bin'
-        if (Test-Path -LiteralPath $cargoBin) {
-            $pathParts = $env:PATH -split ';'
-            if (-not ($pathParts -contains $cargoBin)) {
-                $env:PATH = "$cargoBin;$env:PATH"
-            }
-        }
-    }
-
-    Assert-Command -Name 'rustup' -HelpText 'Rust installation did not complete correctly.'
-    Assert-Command -Name 'cargo' -HelpText 'Cargo was not found after Rust installation.'
-
-    Write-Log 'Configuring Rust targets...' Cyan
-    Invoke-External -FilePath 'rustup' -ArgumentList @('default', 'stable')
-    Invoke-External -FilePath 'rustup' -ArgumentList @('target', 'add', 'x86_64-pc-windows-msvc')
-    Invoke-External -FilePath 'rustup' -ArgumentList @('target', 'add', 'i686-pc-windows-msvc')
-
-    $cargoCbuild = Get-Command cargo-cbuild -ErrorAction SilentlyContinue
-    if (-not $cargoCbuild) {
-        Write-Log 'Installing cargo-c...' Cyan
-        Invoke-External -FilePath 'cargo' -ArgumentList @('install', 'cargo-c', '--locked')
-    }
-    else {
-        Write-Log 'cargo-c already installed.' DarkCyan
-    }
-}
-
-function Build-Resvg {
-    param(
-        [Parameter(Mandatory = $true)][string]$Target,
-        [Parameter(Mandatory = $true)][string]$Prefix
-    )
-
-    Ensure-Directory -Path $Prefix
-    Write-Log "Building resvg C API for $Target -> $Prefix" Cyan
-
-    $env:RUSTFLAGS = '-C target-feature=+crt-static'
     try {
-        Invoke-External -FilePath 'cargo' `
-            -WorkingDirectory $ResvgRepoRoot `
-            -ArgumentList @(
-                'cinstall',
-                '--release',
-                '--locked',
-                '--manifest-path', 'crates/c-api/Cargo.toml',
-                '--target', $Target,
-                '--prefix', $Prefix
-            )
+        Invoke-WebRequest -Uri "https://win.rustup.rs/x86_64" -OutFile $rustupExe -UseBasicParsing
     }
-    finally {
-        Remove-Item Env:RUSTFLAGS -ErrorAction SilentlyContinue
+    catch {
+        Invoke-WebRequest -Uri "https://win.rustup.rs/" -OutFile $rustupExe -UseBasicParsing
+    }
+
+    Invoke-LoggedProcess -FilePath $rustupExe -Arguments @("-y")
+
+    $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
+    if (Test-Path -LiteralPath $cargoBin) {
+        $env:PATH = $env:PATH + ";" + $cargoBin
     }
 }
 
-function Ensure-Vcpkg {
-    if (-not (Test-Path -LiteralPath (Join-Path $VcpkgRoot 'vcpkg.exe'))) {
-        Ensure-GitCloneOrPull -RepoUrl 'https://github.com/microsoft/vcpkg.git' -DestinationPath $VcpkgRoot
-        Write-Log 'Bootstrapping vcpkg...' Cyan
-        Invoke-External -FilePath (Join-Path $VcpkgRoot 'bootstrap-vcpkg.bat') -WorkingDirectory $VcpkgRoot
+function Get-RelativePathCompat {
+    param(
+        [Parameter(Mandatory = $true)][string]$BasePath,
+        [Parameter(Mandatory = $true)][string]$TargetPath
+    )
+
+    $baseFull = [System.IO.Path]::GetFullPath($BasePath)
+    $targetFull = [System.IO.Path]::GetFullPath($TargetPath)
+
+    if (-not $baseFull.EndsWith('\')) { $baseFull += '\' }
+
+    $baseUri = New-Object System.Uri($baseFull)
+    $targetUri = New-Object System.Uri($targetFull)
+    $relativeUri = $baseUri.MakeRelativeUri($targetUri)
+    return [System.Uri]::UnescapeDataString($relativeUri.ToString()).Replace('/', '\')
+}
+
+function Get-ExpectedProjectPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$ProjectSubdir,
+        [Parameter(Mandatory = $true)][string]$ProjectFileName
+    )
+    return Join-Path (Join-Path $RepoRoot $ProjectSubdir) $ProjectFileName
+}
+
+function Select-NodesLocalName {
+    param(
+        [Parameter(Mandatory = $true)]$Node,
+        [Parameter(Mandatory = $true)][string]$XPath
+    )
+    return $Node.SelectNodes($XPath)
+}
+
+function Select-SingleNodeLocalName {
+    param(
+        [Parameter(Mandatory = $true)]$Node,
+        [Parameter(Mandatory = $true)][string]$XPath
+    )
+    return $Node.SelectSingleNode($XPath)
+}
+
+function Normalize-SemicolonList {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return "" }
+
+    $items = New-Object System.Collections.Generic.List[string]
+    foreach ($part in ($Value -split ';')) {
+        $trimmed = $part.Trim()
+        if ($trimmed -ne "" -and -not $items.Contains($trimmed)) {
+            [void]$items.Add($trimmed)
+        }
+    }
+    return ($items -join ';')
+}
+
+function Prepend-TokenToList {
+    param(
+        [string]$Existing,
+        [Parameter(Mandatory = $true)][string]$Token,
+        [Parameter(Mandatory = $true)][string]$FallbackTail
+    )
+
+    $items = New-Object System.Collections.Generic.List[string]
+    foreach ($part in (($Existing -split ';') + @($FallbackTail))) {
+        $trimmed = $part.Trim()
+        if ($trimmed -ne "") {
+            [void]$items.Add($trimmed)
+        }
+    }
+
+    $filtered = New-Object System.Collections.Generic.List[string]
+    [void]$filtered.Add($Token)
+    foreach ($item in $items) {
+        if ($item -ne $Token -and -not $filtered.Contains($item)) {
+            [void]$filtered.Add($item)
+        }
+    }
+    return Normalize-SemicolonList ($filtered -join ';')
+}
+
+function Remove-TokenFromList {
+    param(
+        [string]$Existing,
+        [Parameter(Mandatory = $true)][string]$Token
+    )
+    if ([string]::IsNullOrWhiteSpace($Existing)) { return $Existing }
+
+    $items = New-Object System.Collections.Generic.List[string]
+    foreach ($part in ($Existing -split ';')) {
+        $trimmed = $part.Trim()
+        if ($trimmed -ne "" -and $trimmed -ne $Token) {
+            [void]$items.Add($trimmed)
+        }
+    }
+    if ($items.Count -eq 0) { return "" }
+    return Normalize-SemicolonList ($items -join ';')
+}
+
+function Show-IntroDialog {
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "Install resvg and FFmpeg"
+    $form.StartPosition = "CenterScreen"
+    $form.Width = 760
+    $form.Height = 320
+    $form.FormBorderStyle = 'FixedDialog'
+    $form.MaximizeBox = $false
+    $form.MinimizeBox = $false
+
+    $label = New-Object System.Windows.Forms.Label
+    $label.AutoSize = $false
+    $label.Left = 20
+    $label.Top = 20
+    $label.Width = 700
+    $label.Height = 180
+    $label.Text = @"
+This script will install the required resvg and FFmpeg toolchains locally inside this repository.
+
+It will create:
+  External\resvg\resvg-capi\x64
+  External\resvg\resvg-capi\x86
+  External\vcpkg
+
+It will also:
+  - generate MysticThumbs.ExternalDeps.props in the repo root
+  - patch SVGPlugin and FFMpegPlugin project files to use the local dependencies
+  - copy the FFmpeg runtime DLLs into the MysticThumbs plugin Debug/Release folders under %APPDATA%
+
+Run this from a Developer Command Prompt for VS2022 as administrator.
+"@
+
+    $startBtn = New-Object System.Windows.Forms.Button
+    $startBtn.Text = "Start Setup"
+    $startBtn.Width = 120
+    $startBtn.Height = 32
+    $startBtn.Left = 460
+    $startBtn.Top = 230
+    $startBtn.DialogResult = [System.Windows.Forms.DialogResult]::OK
+
+    $cancelBtn = New-Object System.Windows.Forms.Button
+    $cancelBtn.Text = "Cancel"
+    $cancelBtn.Width = 120
+    $cancelBtn.Height = 32
+    $cancelBtn.Left = 595
+    $cancelBtn.Top = 230
+    $cancelBtn.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+
+    $form.AcceptButton = $startBtn
+    $form.CancelButton = $cancelBtn
+
+    $form.Controls.Add($label)
+    $form.Controls.Add($startBtn)
+    $form.Controls.Add($cancelBtn)
+
+    return ($form.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK)
+}
+
+function Show-CompletionDialog {
+    param([Parameter(Mandatory = $true)][string]$Text)
+
+    $lines = $Text -split "`r?`n"
+    $bmp = New-Object System.Drawing.Bitmap(1, 1)
+    $g = [System.Drawing.Graphics]::FromImage($bmp)
+    $font = New-Object System.Drawing.Font("Consolas", 10)
+
+    $maxWidth = 0
+    foreach ($line in $lines) {
+        $size = $g.MeasureString($line, $font)
+        $lineWidth = [int][Math]::Ceiling($size.Width)
+        if ($lineWidth -gt $maxWidth) { $maxWidth = $lineWidth }
+    }
+    $g.Dispose()
+    $bmp.Dispose()
+
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "Setup Complete"
+    $form.StartPosition = "CenterScreen"
+    $form.MinimumSize = New-Object System.Drawing.Size(760, 460)
+    $form.Width = [Math]::Min([Math]::Max($maxWidth + 80, 820), 1350)
+    $form.Height = 600
+
+    $panel = New-Object System.Windows.Forms.Panel
+    $panel.Dock = "Bottom"
+    $panel.Height = 52
+    $panel.Padding = New-Object System.Windows.Forms.Padding(0, 8, 12, 8)
+
+    $textBox = New-Object System.Windows.Forms.TextBox
+    $textBox.Multiline = $true
+    $textBox.ReadOnly = $true
+    $textBox.ScrollBars = "Both"
+    $textBox.WordWrap = $false
+    $textBox.Dock = "Fill"
+    $textBox.Font = $font
+    $textBox.Text = $Text
+
+    $okButton = New-Object System.Windows.Forms.Button
+    $okButton.Text = "OK"
+    $okButton.Width = 100
+    $okButton.Height = 30
+    $okButton.Top = 10
+    $okButton.Left = $panel.Width - 112
+    $okButton.Anchor = "Bottom,Right"
+    $okButton.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $okButton.Add_Click({ $form.Close() })
+
+    $form.AcceptButton = $okButton
+    $form.CancelButton = $okButton
+
+    $panel.Controls.Add($okButton)
+
+    # Important: add the bottom panel first, then the fill control,
+    # otherwise the fill textbox can occupy the entire client area and visually hide the panel.
+    $form.Controls.Add($panel)
+    $form.Controls.Add($textBox)
+
+    [void]$form.ShowDialog()
+}
+
+function Ensure-ResvgBuilt {
+    Ensure-Directory $ExternalRoot
+    Ensure-Directory $ExternalSrc
+    Ensure-Directory $ResvgInstall
+
+    Install-RustIfMissing
+    Assert-Command "git" "Git"
+    Assert-Command "rustup" "rustup"
+    Assert-Command "cargo" "cargo"
+
+    Write-Log "Configuring Rust targets..." Green
+    Invoke-LoggedProcess -FilePath "rustup" -Arguments @("default", "stable")
+    Invoke-LoggedProcess -FilePath "rustup" -Arguments @("target", "add", "x86_64-pc-windows-msvc")
+    Invoke-LoggedProcess -FilePath "rustup" -Arguments @("target", "add", "i686-pc-windows-msvc")
+
+    if (-not (Get-Command cargo-cbuild -ErrorAction SilentlyContinue)) {
+        Write-Log "Installing cargo-c..." Green
+        Invoke-LoggedProcess -FilePath "cargo" -Arguments @("install", "cargo-c", "--locked")
+    }
+
+    if (-not (Test-Path -LiteralPath $ResvgSrc)) {
+        Write-Log "Cloning resvg..." Green
+        Invoke-LoggedProcess -FilePath "git" -Arguments @("clone", "https://github.com/linebender/resvg.git", $ResvgSrc) -WorkingDirectory $ExternalSrc
     }
     else {
-        Ensure-GitCloneOrPull -RepoUrl 'https://github.com/microsoft/vcpkg.git' -DestinationPath $VcpkgRoot
-        Write-Log 'Re-bootstrapping vcpkg...' Cyan
-        Invoke-External -FilePath (Join-Path $VcpkgRoot 'bootstrap-vcpkg.bat') -WorkingDirectory $VcpkgRoot
+        Write-Log "resvg source already exists: $ResvgSrc" DarkCyan
     }
 
-    $vcpkgExe = Join-Path $VcpkgRoot 'vcpkg.exe'
+    Write-Log "Building resvg C API x64..." Green
+    Ensure-Directory $ResvgX64
+    Invoke-LoggedProcess -FilePath "cargo" -WorkingDirectory $ResvgSrc -Arguments @(
+        "cinstall", "--release", "--locked",
+        "--manifest-path", "crates/c-api/Cargo.toml",
+        "--target", "x86_64-pc-windows-msvc",
+        "--prefix", $ResvgX64
+    ) -Environment @{ RUSTFLAGS = "-C target-feature=+crt-static" }
 
-    Write-Log 'Installing FFmpeg (x64 + dav1d)...' Cyan
-    Invoke-External -FilePath $vcpkgExe -WorkingDirectory $VcpkgRoot -ArgumentList @('install', 'ffmpeg[dav1d]:x64-windows')
+    Write-Log "Building resvg C API x86..." Green
+    Ensure-Directory $ResvgX86
+    Invoke-LoggedProcess -FilePath "cargo" -WorkingDirectory $ResvgSrc -Arguments @(
+        "cinstall", "--release", "--locked",
+        "--manifest-path", "crates/c-api/Cargo.toml",
+        "--target", "i686-pc-windows-msvc",
+        "--prefix", $ResvgX86
+    ) -Environment @{ RUSTFLAGS = "-C target-feature=+crt-static" }
 
-    Write-Log 'Installing FFmpeg (x86 + dav1d)...' Cyan
-    Invoke-External -FilePath $vcpkgExe -WorkingDirectory $VcpkgRoot -ArgumentList @('install', 'ffmpeg[dav1d]:x86-windows', '--allow-unsupported')
+    Add-Summary "Installed toolchains:"
+    Add-Summary " - resvg source:"
+    Add-Summary "   $ResvgSrc"
+    Add-Summary " - resvg x64:"
+    Add-Summary "   $ResvgX64"
+    Add-Summary " - resvg x86:"
+    Add-Summary "   $ResvgX86"
+}
+
+function Ensure-VcpkgAndFFmpeg {
+    Ensure-Directory $ExternalRoot
+    Assert-Command "git" "Git"
+
+    if (-not (Test-Path -LiteralPath $VcpkgRoot)) {
+        Write-Log "Cloning vcpkg..." Green
+        Invoke-LoggedProcess -FilePath "git" -Arguments @("clone", "https://github.com/microsoft/vcpkg.git", $VcpkgRoot) -WorkingDirectory $ExternalRoot
+    }
+    else {
+        Write-Log "vcpkg already exists: $VcpkgRoot" DarkCyan
+    }
+
+    $bootstrap = Join-Path $VcpkgRoot "bootstrap-vcpkg.bat"
+    if (-not (Test-Path -LiteralPath $bootstrap)) {
+        throw "bootstrap-vcpkg.bat not found at $bootstrap"
+    }
+
+    Write-Log "Bootstrapping vcpkg..." Green
+    Invoke-LoggedProcess -FilePath $bootstrap -WorkingDirectory $VcpkgRoot
+
+    $vcpkgExe = Join-Path $VcpkgRoot "vcpkg.exe"
+    if (-not (Test-Path -LiteralPath $vcpkgExe)) {
+        throw "vcpkg.exe not found after bootstrap."
+    }
+
+    Write-Log "Installing FFmpeg x64..." Green
+    Invoke-LoggedProcess -FilePath $vcpkgExe -WorkingDirectory $VcpkgRoot -Arguments @("install", "ffmpeg[dav1d]:x64-windows")
+
+    Write-Log "Installing FFmpeg x86..." Green
+    Invoke-LoggedProcess -FilePath $vcpkgExe -WorkingDirectory $VcpkgRoot -Arguments @("install", "ffmpeg[dav1d]:x86-windows", "--allow-unsupported")
+
+    Add-Summary " - vcpkg:"
+    Add-Summary "   $VcpkgRoot"
+    Add-Summary " - FFmpeg x64:"
+    Add-Summary "   $(Join-Path $VcpkgRoot 'installed\x64-windows')"
+    Add-Summary " - FFmpeg x86:"
+    Add-Summary "   $(Join-Path $VcpkgRoot 'installed\x86-windows')"
 }
 
 function Write-ExternalDepsProps {
-    $props = @'
+    $content = @'
 <?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <PropertyGroup>
-    <MysticThumbsExternalRoot>$(MSBuildThisFileDirectory)External</MysticThumbsExternalRoot>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Platform)'=='Win32'">
-    <MysticThumbsResvgInclude>$(MysticThumbsExternalRoot)\resvg\resvg-capi\x86\include</MysticThumbsResvgInclude>
-    <MysticThumbsResvgLib>$(MysticThumbsExternalRoot)\resvg\resvg-capi\x86\lib</MysticThumbsResvgLib>
-    <MysticThumbsFFmpegInclude>$(MysticThumbsExternalRoot)\vcpkg\installed\x86-windows\include</MysticThumbsFFmpegInclude>
-    <MysticThumbsFFmpegLib>$(MysticThumbsExternalRoot)\vcpkg\installed\x86-windows\lib</MysticThumbsFFmpegLib>
-  </PropertyGroup>
-
   <PropertyGroup Condition="'$(Platform)'=='x64'">
-    <MysticThumbsResvgInclude>$(MysticThumbsExternalRoot)\resvg\resvg-capi\x64\include</MysticThumbsResvgInclude>
-    <MysticThumbsResvgLib>$(MysticThumbsExternalRoot)\resvg\resvg-capi\x64\lib</MysticThumbsResvgLib>
-    <MysticThumbsFFmpegInclude>$(MysticThumbsExternalRoot)\vcpkg\installed\x64-windows\include</MysticThumbsFFmpegInclude>
-    <MysticThumbsFFmpegLib>$(MysticThumbsExternalRoot)\vcpkg\installed\x64-windows\lib</MysticThumbsFFmpegLib>
+    <MysticThumbsResvgInclude>$(MSBuildThisFileDirectory)External\resvg\resvg-capi\x64\include</MysticThumbsResvgInclude>
+    <MysticThumbsResvgLib>$(MSBuildThisFileDirectory)External\resvg\resvg-capi\x64\lib</MysticThumbsResvgLib>
+    <MysticThumbsFFmpegInclude>$(MSBuildThisFileDirectory)External\vcpkg\installed\x64-windows\include</MysticThumbsFFmpegInclude>
+    <MysticThumbsFFmpegLib>$(MSBuildThisFileDirectory)External\vcpkg\installed\x64-windows\lib</MysticThumbsFFmpegLib>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Platform)'=='Win32'">
+    <MysticThumbsResvgInclude>$(MSBuildThisFileDirectory)External\resvg\resvg-capi\x86\include</MysticThumbsResvgInclude>
+    <MysticThumbsResvgLib>$(MSBuildThisFileDirectory)External\resvg\resvg-capi\x86\lib</MysticThumbsResvgLib>
+    <MysticThumbsFFmpegInclude>$(MSBuildThisFileDirectory)External\vcpkg\installed\x86-windows\include</MysticThumbsFFmpegInclude>
+    <MysticThumbsFFmpegLib>$(MSBuildThisFileDirectory)External\vcpkg\installed\x86-windows\lib</MysticThumbsFFmpegLib>
   </PropertyGroup>
 </Project>
 '@
-    Set-Content -Path $PropsPath -Value $props -Encoding utf8
+    Set-Content -LiteralPath $PropsPath -Value $content -Encoding UTF8
     Write-Log "Wrote props file: $PropsPath" Green
-}
-
-
-function Get-MsbuildXmlDocument {
-    param([Parameter(Mandatory = $true)][string]$ProjectPath)
-
-    $xml = New-Object System.Xml.XmlDocument
-    $xml.PreserveWhitespace = $true
-    $xml.Load($ProjectPath)
-
-    $nsUri = $xml.DocumentElement.NamespaceURI
-    $nsmgr = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
-    $nsmgr.AddNamespace('msb', $nsUri)
-
-    return @{ Xml = $xml; Ns = $nsmgr; NsUri = $nsUri }
 }
 
 function Ensure-PropsImport {
     param([Parameter(Mandatory = $true)][string]$ProjectPath)
 
-    $ctx = Get-MsbuildXmlDocument -ProjectPath $ProjectPath
-    $xml = $ctx.Xml
-    $nsmgr = $ctx.Ns
-    $nsUri = $ctx.NsUri
-
-    $relativeProps = Get-RelativePathCompat -BasePath (Split-Path -Parent $ProjectPath) -TargetPath $PropsPath
-    $xpath = "//msb:Import[contains(@Project, 'MysticThumbs.ExternalDeps.props')]"
-    $existing = $xml.SelectSingleNode($xpath, $nsmgr)
-    if ($existing) {
-        Write-Log "Props import already present in $(Split-Path -Leaf $ProjectPath)" DarkCyan
+    if (-not (Test-Path -LiteralPath $ProjectPath)) {
+        Write-Log "Project not found: $ProjectPath" Yellow
         return
     }
 
-    $groups = $xml.SelectNodes("//msb:ImportGroup[@Label='PropertySheets']", $nsmgr)
-    if (-not $groups -or $groups.Count -eq 0) {
-        throw "Could not find any PropertySheets import groups in $ProjectPath"
+    [xml]$xml = Get-Content -LiteralPath $ProjectPath -Raw -Encoding UTF8
+    $relativeProps = Get-RelativePathCompat -BasePath (Split-Path -Parent $ProjectPath) -TargetPath $PropsPath
+
+    $groups = @(Select-NodesLocalName -Node $xml -XPath "/*[local-name()='Project']/*[local-name()='ImportGroup' and @Label='PropertySheets']")
+    if ($groups.Count -eq 0) {
+        Write-Log "No PropertySheets import group found in $(Split-Path -Leaf $ProjectPath)" Yellow
+        return
     }
 
+    $changed = $false
     foreach ($group in $groups) {
-        $import = $xml.CreateElement('Import', $nsUri)
-        $null = $import.SetAttribute('Project', $relativeProps)
-        $null = $import.SetAttribute('Condition', "exists('$relativeProps')")
-        $group.AppendChild($import) | Out-Null
-    }
-
-    $xml.Save($ProjectPath)
-    Write-Log "Inserted props import into $(Split-Path -Leaf $ProjectPath)" Green
-}
-
-function Prepend-MacroPreservingDefault {
-    param(
-        [Parameter()][string]$ExistingValue,
-        [Parameter(Mandatory = $true)][string]$Macro,
-        [Parameter(Mandatory = $true)][string]$DefaultMacro
-    )
-
-    $existing = [string]$ExistingValue
-    if ([string]::IsNullOrWhiteSpace($existing)) {
-        return "$Macro;$DefaultMacro"
-    }
-
-    $parts = @()
-    foreach ($piece in ($existing -split ';')) {
-        $trimmed = $piece.Trim()
-        if (-not [string]::IsNullOrWhiteSpace($trimmed)) {
-            $parts += $trimmed
+        $already = $false
+        foreach ($child in $group.ChildNodes) {
+            if ($child.LocalName -eq "Import" -and $child.Project -eq $relativeProps) {
+                $already = $true
+                break
+            }
+        }
+        if (-not $already) {
+            $newImport = $xml.CreateElement("Import", $xml.DocumentElement.NamespaceURI)
+            [void]$newImport.SetAttribute("Project", $relativeProps)
+            [void]$newImport.SetAttribute("Condition", "exists('$relativeProps')")
+            [void]$group.AppendChild($newImport)
+            $changed = $true
         }
     }
 
-    if ($parts -notcontains $DefaultMacro) {
-        $parts += $DefaultMacro
-    }
-
-    $parts = @($parts | Where-Object { $_ -ne $Macro })
-    return (@($Macro) + $parts) -join ';'
-}
-
-function Remove-MacroPreservingDefault {
-    param(
-        [Parameter()][string]$ExistingValue,
-        [Parameter(Mandatory = $true)][string]$Macro,
-        [Parameter(Mandatory = $true)][string]$DefaultMacro
-    )
-
-    $existing = [string]$ExistingValue
-    $parts = @()
-    foreach ($piece in ($existing -split ';')) {
-        $trimmed = $piece.Trim()
-        if (-not [string]::IsNullOrWhiteSpace($trimmed) -and $trimmed -ne $Macro) {
-            $parts += $trimmed
-        }
-    }
-
-    if ($parts.Count -eq 0) {
-        return $DefaultMacro
-    }
-
-    if ($parts -notcontains $DefaultMacro) {
-        $parts += $DefaultMacro
-    }
-
-    return ($parts | Select-Object -Unique) -join ';'
-}
-
-function Get-OrCreateChildElement {
-    param(
-        [Parameter(Mandatory = $true)]$Xml,
-        [Parameter(Mandatory = $true)]$Parent,
-        [Parameter(Mandatory = $true)][string]$NsUri,
-        [Parameter(Mandatory = $true)][string]$ChildName,
-        [Parameter(Mandatory = $true)]$NamespaceManager
-    )
-
-    $node = $Parent.SelectSingleNode("msb:$ChildName", $NamespaceManager)
-    if (-not $node) {
-        $node = $Xml.CreateElement($ChildName, $NsUri)
-        $Parent.AppendChild($node) | Out-Null
-    }
-    return $node
-}
-
-function Update-ProjectDependencyPaths {
-    param(
-        [Parameter(Mandatory = $true)][string]$ProjectPath,
-        [Parameter(Mandatory = $true)][ValidateSet('SVG','FFMpeg')][string]$Kind
-    )
-
-    $ctx = Get-MsbuildXmlDocument -ProjectPath $ProjectPath
-    $xml = $ctx.Xml
-    $nsmgr = $ctx.Ns
-    $nsUri = $ctx.NsUri
-
-    if ($Kind -eq 'SVG') {
-        $includeMacro = '$(MysticThumbsResvgInclude)'
-        $libMacro = '$(MysticThumbsResvgLib)'
+    if ($changed) {
+        $xml.Save($ProjectPath)
+        Write-Log "Inserted props import into $(Split-Path -Leaf $ProjectPath)" Green
     }
     else {
-        $includeMacro = '$(MysticThumbsFFmpegInclude)'
-        $libMacro = '$(MysticThumbsFFmpegLib)'
+        Write-Log "Props import already present in $(Split-Path -Leaf $ProjectPath)" DarkCyan
     }
-
-    # Clean up earlier script versions that wrote directly to VC++ Directories IncludePath/LibraryPath.
-    $propertyGroups = $xml.SelectNodes("//msb:PropertyGroup[@Condition]", $nsmgr)
-    foreach ($group in $propertyGroups) {
-        $includePathNode = $group.SelectSingleNode("msb:IncludePath", $nsmgr)
-        if ($includePathNode) {
-            $includePathNode.InnerText = Remove-MacroPreservingDefault -ExistingValue $includePathNode.InnerText -Macro $includeMacro -DefaultMacro '$(IncludePath)'
-        }
-
-        $libraryPathNode = $group.SelectSingleNode("msb:LibraryPath", $nsmgr)
-        if ($libraryPathNode) {
-            $libraryPathNode.InnerText = Remove-MacroPreservingDefault -ExistingValue $libraryPathNode.InnerText -Macro $libMacro -DefaultMacro '$(LibraryPath)'
-        }
-    }
-
-    # Preferred integration point: C/C++ and Link additional directories.
-    $itemGroups = $xml.SelectNodes("//msb:ItemDefinitionGroup", $nsmgr)
-    if (-not $itemGroups -or $itemGroups.Count -eq 0) {
-        throw "Could not find any ItemDefinitionGroup elements in $ProjectPath"
-    }
-
-    foreach ($itemGroup in $itemGroups) {
-        $cl = Get-OrCreateChildElement -Xml $xml -Parent $itemGroup -NsUri $nsUri -ChildName 'ClCompile' -NamespaceManager $nsmgr
-        $addInc = Get-OrCreateChildElement -Xml $xml -Parent $cl -NsUri $nsUri -ChildName 'AdditionalIncludeDirectories' -NamespaceManager $nsmgr
-        $addInc.InnerText = Prepend-MacroPreservingDefault -ExistingValue $addInc.InnerText -Macro $includeMacro -DefaultMacro '%(AdditionalIncludeDirectories)'
-
-        $link = Get-OrCreateChildElement -Xml $xml -Parent $itemGroup -NsUri $nsUri -ChildName 'Link' -NamespaceManager $nsmgr
-        $addLib = Get-OrCreateChildElement -Xml $xml -Parent $link -NsUri $nsUri -ChildName 'AdditionalLibraryDirectories' -NamespaceManager $nsmgr
-        $addLib.InnerText = Prepend-MacroPreservingDefault -ExistingValue $addLib.InnerText -Macro $libMacro -DefaultMacro '%(AdditionalLibraryDirectories)'
-    }
-
-    $xml.Save($ProjectPath)
-    Write-Log "Updated AdditionalIncludeDirectories / AdditionalLibraryDirectories in $(Split-Path -Leaf $ProjectPath)" Green
 }
-
 function Update-VcxprojDependencyConfig {
     param(
         [Parameter(Mandatory = $true)][string]$ProjectPath,
-        [Parameter(Mandatory = $true)][ValidateSet('SVG','FFMpeg')][string]$Kind
+        [Parameter(Mandatory = $true)][string]$IncludeMacro,
+        [Parameter(Mandatory = $true)][string]$LibMacro
     )
 
-    Update-ProjectDependencyPaths -ProjectPath $ProjectPath -Kind $Kind
-}
-
-function Update-GitIgnoreHint {
-    $gitIgnorePath = Join-Path $RepoRoot '.gitignore'
-    $recommended = @('External/', 'MysticThumbs.ExternalDeps.props')
-
-    if (-not (Test-Path -LiteralPath $gitIgnorePath)) {
-        Write-Log '.gitignore not found. Skipping automatic update.' Yellow
+    if (-not (Test-Path -LiteralPath $ProjectPath)) {
+        Write-Log "Project not found: $ProjectPath" Yellow
         return
     }
 
-    $existing = @(Get-Content -LiteralPath $gitIgnorePath -ErrorAction SilentlyContinue)
-    $toAdd = @()
-    foreach ($line in $recommended) {
-        if ($existing -notcontains $line) { $toAdd += $line }
-    }
+    [xml]$xml = Get-Content -LiteralPath $ProjectPath -Raw -Encoding UTF8
+    $changed = $false
 
-    if ($toAdd.Count -gt 0) {
-        Add-Content -LiteralPath $gitIgnorePath -Value "`r`n# Local external toolchains`r`n$($toAdd -join "`r`n")"
-        Write-Log 'Updated .gitignore with External/ and MysticThumbs.ExternalDeps.props' Green
-    }
-    else {
-        Write-Log '.gitignore already contains External/ and props entries.' DarkCyan
-    }
-}
+    $idgs = @(Select-NodesLocalName -Node $xml -XPath "/*[local-name()='Project']/*[local-name()='ItemDefinitionGroup']")
+    foreach ($idg in $idgs) {
+        $cl = Select-SingleNodeLocalName -Node $idg -XPath "./*[local-name()='ClCompile']"
+        if (-not $cl) {
+            $cl = $xml.CreateElement("ClCompile", $xml.DocumentElement.NamespaceURI)
+            [void]$idg.AppendChild($cl)
+            $changed = $true
+        }
 
-function Get-ProjectCandidates {
-    param([Parameter(Mandatory = $true)][string]$LeafName)
+        $addInc = Select-SingleNodeLocalName -Node $cl -XPath "./*[local-name()='AdditionalIncludeDirectories']"
+        if (-not $addInc) {
+            $addInc = $xml.CreateElement("AdditionalIncludeDirectories", $xml.DocumentElement.NamespaceURI)
+            [void]$cl.AppendChild($addInc)
+            $changed = $true
+        }
 
-    $candidates = Get-ChildItem -Path $RepoRoot -Filter $LeafName -File -Recurse -ErrorAction SilentlyContinue |
-        Sort-Object FullName |
-        Select-Object -ExpandProperty FullName
+        $newInc = Prepend-TokenToList -Existing $addInc.InnerText -Token $IncludeMacro -FallbackTail "%(AdditionalIncludeDirectories)"
+        if ($addInc.InnerText -ne $newInc) {
+            $addInc.InnerText = $newInc
+            $changed = $true
+        }
 
-    return @($candidates)
-}
+        $link = Select-SingleNodeLocalName -Node $idg -XPath "./*[local-name()='Link']"
+        if (-not $link) {
+            $link = $xml.CreateElement("Link", $xml.DocumentElement.NamespaceURI)
+            [void]$idg.AppendChild($link)
+            $changed = $true
+        }
 
-function Show-StartupDialog {
-    $form = New-Object System.Windows.Forms.Form
-    $form.Text = "Voith's CODE - Setup resvg and FFmpeg for MysticThumbs"
-    $form.Size = New-Object System.Drawing.Size(760, 360)
-    $form.StartPosition = 'CenterScreen'
-    $form.FormBorderStyle = 'FixedDialog'
-    $form.MaximizeBox = $false
-    $form.MinimizeBox = $false
+        $addLib = Select-SingleNodeLocalName -Node $link -XPath "./*[local-name()='AdditionalLibraryDirectories']"
+        if (-not $addLib) {
+            $addLib = $xml.CreateElement("AdditionalLibraryDirectories", $xml.DocumentElement.NamespaceURI)
+            [void]$link.AppendChild($addLib)
+            $changed = $true
+        }
 
-    $intro = New-Object System.Windows.Forms.Label
-    $intro.Location = New-Object System.Drawing.Point(20, 18)
-    $intro.Size = New-Object System.Drawing.Size(700, 56)
-    $intro.Text = "This setup uses a repo-local External directory and generates MysticThumbs.ExternalDeps.props automatically."
-    $form.Controls.Add($intro)
-
-    $fields = @(
-        @{ Y = 90;  Label = 'Repo root:';     Value = $RepoRoot },
-        @{ Y = 130; Label = 'External root:'; Value = $ExternalRoot },
-        @{ Y = 170; Label = 'resvg source:';  Value = $ResvgRepoRoot },
-        @{ Y = 210; Label = 'vcpkg root:';    Value = $VcpkgRoot },
-        @{ Y = 250; Label = 'Props file:';    Value = $PropsPath }
-    )
-
-    foreach ($f in $fields) {
-        $lbl = New-Object System.Windows.Forms.Label
-        $lbl.Location = New-Object System.Drawing.Point(20, [int]$f['Y'])
-        $lbl.Size = New-Object System.Drawing.Size(120, 20)
-        $lbl.Text = [string]$f['Label']
-        $form.Controls.Add($lbl)
-
-        $tb = New-Object System.Windows.Forms.TextBox
-        $tb.Location = New-Object System.Drawing.Point(145, ([int]$f['Y'] - 3))
-        $tb.Size = New-Object System.Drawing.Size(575, 23)
-        $tb.ReadOnly = $true
-        $tb.Text = [string]$f['Value']
-        $form.Controls.Add($tb)
-    }
-
-    $startButton = New-Object System.Windows.Forms.Button
-    $startButton.Location = New-Object System.Drawing.Point(470, 290)
-    $startButton.Size = New-Object System.Drawing.Size(110, 30)
-    $startButton.Text = 'Start Setup'
-    $startButton.DialogResult = [System.Windows.Forms.DialogResult]::OK
-    $form.Controls.Add($startButton)
-
-    $cancelButton = New-Object System.Windows.Forms.Button
-    $cancelButton.Location = New-Object System.Drawing.Point(600, 290)
-    $cancelButton.Size = New-Object System.Drawing.Size(110, 30)
-    $cancelButton.Text = 'Cancel'
-    $cancelButton.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
-    $form.Controls.Add($cancelButton)
-
-    $form.AcceptButton = $startButton
-    $form.CancelButton = $cancelButton
-
-    return $form.ShowDialog()
-}
-
-
-function Show-CompletionDialog {
-    param([Parameter(Mandatory = $true)][string]$Text)
-
-    $font = New-Object System.Drawing.Font('Consolas', 10)
-    $lines = $Text -split "`r?`n"
-    $longestLine = ($lines | Measure-Object -Maximum Length).Maximum
-    if (-not $longestLine) { $longestLine = 80 }
-
-    $charWidth = [int][Math]::Ceiling($font.Size * 0.95)
-    $targetClientWidth = [Math]::Min(1400, [Math]::Max(860, ($longestLine * $charWidth) + 48))
-    $targetClientHeight = 520
-
-    $form = New-Object System.Windows.Forms.Form
-    $form.Text = 'Setup Complete'
-    $form.ClientSize = New-Object System.Drawing.Size($targetClientWidth, $targetClientHeight)
-    $form.StartPosition = 'CenterScreen'
-    $form.FormBorderStyle = 'Sizable'
-    $form.MaximizeBox = $true
-    $form.MinimizeBox = $false
-    $form.MinimumSize = New-Object System.Drawing.Size(900, 600)
-
-    $textBox = New-Object System.Windows.Forms.TextBox
-    $textBox.Multiline = $true
-    $textBox.ReadOnly = $true
-    $textBox.ScrollBars = 'Both'
-    $textBox.WordWrap = $false
-    $textBox.Location = New-Object System.Drawing.Point(16, 16)
-    $textBox.Size = New-Object System.Drawing.Size(($form.ClientSize.Width - 32), ($form.ClientSize.Height - 86))
-    $textBox.Anchor = 'Top,Bottom,Left,Right'
-    $textBox.Font = $font
-    $textBox.Text = $Text
-    $form.Controls.Add($textBox)
-
-    $okButton = New-Object System.Windows.Forms.Button
-    $okButton.Text = 'OK'
-    $okButton.Size = New-Object System.Drawing.Size(100, 30)
-    $okButton.Location = New-Object System.Drawing.Point(($form.ClientSize.Width - 116), ($form.ClientSize.Height - 46))
-    $okButton.Anchor = 'Bottom,Right'
-    $okButton.Add_Click({ $form.Close() })
-    $form.Controls.Add($okButton)
-
-    $form.AcceptButton = $okButton
-
-    [void]$form.ShowDialog()
-}
-
-function Run-Setup {
-    Write-Log 'Starting refactored setup...' Cyan
-
-    if (-not (Test-IsAdmin)) {
-        Write-Log 'WARNING: Script is not running elevated.' Yellow
-        $confirm = [System.Windows.Forms.MessageBox]::Show(
-            'Running as Administrator is still recommended. Continue anyway?',
-            'Administrator Recommended',
-            [System.Windows.Forms.MessageBoxButtons]::YesNo,
-            [System.Windows.Forms.MessageBoxIcon]::Warning
-        )
-        if ($confirm -ne [System.Windows.Forms.DialogResult]::Yes) {
-            throw 'Setup cancelled because the script was not elevated.'
+        $newLib = Prepend-TokenToList -Existing $addLib.InnerText -Token $LibMacro -FallbackTail "%(AdditionalLibraryDirectories)"
+        if ($addLib.InnerText -ne $newLib) {
+            $addLib.InnerText = $newLib
+            $changed = $true
         }
     }
 
-    Assert-Command -Name 'git' -HelpText 'Install Git for Windows first.'
+    $pgs = @(Select-NodesLocalName -Node $xml -XPath "/*[local-name()='Project']/*[local-name()='PropertyGroup']")
+    foreach ($pg in $pgs) {
+        $includePath = Select-SingleNodeLocalName -Node $pg -XPath "./*[local-name()='IncludePath']"
+        if ($includePath) {
+            $cleaned = Remove-TokenFromList -Existing $includePath.InnerText -Token $IncludeMacro
+            if ([string]::IsNullOrWhiteSpace($cleaned)) { $cleaned = '$(IncludePath)' }
+            if ($includePath.InnerText -ne $cleaned) {
+                $includePath.InnerText = $cleaned
+                $changed = $true
+            }
+        }
 
-    if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
-        $msg = 'cl.exe was not found. Please launch install_resvg_and_ffmpeg.cmd from a VS2022 Developer Command Prompt so the MSVC toolchain is loaded.'
-        Write-Log $msg Yellow
-        $confirm = [System.Windows.Forms.MessageBox]::Show(
-            $msg + "`n`nContinue anyway?",
-            'Visual Studio Developer Prompt Recommended',
-            [System.Windows.Forms.MessageBoxButtons]::YesNo,
-            [System.Windows.Forms.MessageBoxIcon]::Warning
-        )
-        if ($confirm -ne [System.Windows.Forms.DialogResult]::Yes) {
-            throw 'Setup cancelled because MSVC tools were not available in PATH.'
+        $libraryPath = Select-SingleNodeLocalName -Node $pg -XPath "./*[local-name()='LibraryPath']"
+        if ($libraryPath) {
+            $cleaned = Remove-TokenFromList -Existing $libraryPath.InnerText -Token $LibMacro
+            if ([string]::IsNullOrWhiteSpace($cleaned)) { $cleaned = '$(LibraryPath)' }
+            if ($libraryPath.InnerText -ne $cleaned) {
+                $libraryPath.InnerText = $cleaned
+                $changed = $true
+            }
         }
     }
 
-    Ensure-Directory -Path $ExternalRoot
-    Ensure-Directory -Path $ExternalSrcRoot
-
-    Ensure-RustToolchain
-    Ensure-GitCloneOrPull -RepoUrl 'https://github.com/linebender/resvg.git' -DestinationPath $ResvgRepoRoot
-    Build-Resvg -Target 'x86_64-pc-windows-msvc' -Prefix (Join-Path $ResvgInstallRoot 'x64')
-    Build-Resvg -Target 'i686-pc-windows-msvc' -Prefix (Join-Path $ResvgInstallRoot 'x86')
-
-    Ensure-Vcpkg
-    Write-ExternalDepsProps
-
-    $svgProj = Get-ExpectedProjectPath -RelativePath 'SVGPlugin\SVGPluginMysticThumbs.vcxproj'
-    $ffmpegProj = Get-ExpectedProjectPath -RelativePath 'FFMpegPlugin\FFMpegPluginMysticThumbs.vcxproj'
-
-    if ($svgProj) {
-        Ensure-PropsImport -ProjectPath $svgProj
-        Update-VcxprojDependencyConfig -ProjectPath $svgProj -Kind 'SVG'
+    if ($changed) {
+        $xml.Save($ProjectPath)
+        Write-Log "Patched dependency settings in $(Split-Path -Leaf $ProjectPath)" Green
     }
     else {
-        Write-Log 'SVGPlugin\SVGPluginMysticThumbs.vcxproj was not found. Skipping SVG project patch.' Yellow
+        Write-Log "Dependency settings already correct in $(Split-Path -Leaf $ProjectPath)" DarkCyan
+    }
+}
+function Get-FFMpegConfigurations {
+    param([Parameter(Mandatory = $true)][string]$ProjectPath)
+
+    $result = @{
+        "x64"   = @()
+        "Win32" = @()
     }
 
-    if ($ffmpegProj) {
-        Ensure-PropsImport -ProjectPath $ffmpegProj
-        Update-VcxprojDependencyConfig -ProjectPath $ffmpegProj -Kind 'FFMpeg'
-    }
-    else {
-        Write-Log 'FFMpegPlugin\FFMpegPluginMysticThumbs.vcxproj was not found. Skipping FFmpeg project patch.' Yellow
+    if (-not (Test-Path -LiteralPath $ProjectPath)) {
+        $result["x64"] = @("Debug", "Release")
+        $result["Win32"] = @("Debug", "Release")
+        return $result
     }
 
-    Update-GitIgnoreHint
+    [xml]$xml = Get-Content -LiteralPath $ProjectPath -Raw -Encoding UTF8
+    $nodes = @(Select-NodesLocalName -Node $xml -XPath "/*[local-name()='Project']/*[local-name()='ItemGroup']/*[local-name()='ProjectConfiguration']")
 
-    $summaryLines = @(
-        'Setup completed successfully.',
-        '',
-        'Created / updated:',
-        "- $ExternalRoot",
-        "- $PropsPath",
-        "- $LogPath",
-        '',
-        'Installed toolchains:',
-        '- resvg source:',
-        "  $ResvgRepoRoot",
-        '- resvg x64:',
-        "  $(Join-Path $ResvgInstallRoot 'x64')",
-        '- resvg x86:',
-        "  $(Join-Path $ResvgInstallRoot 'x86')",
-        '- vcpkg:',
-        "  $VcpkgRoot",
-        '- FFmpeg x64:',
-        "  $(Join-Path $VcpkgRoot 'installed\x64-windows')",
-        '- FFmpeg x86:',
-        "  $(Join-Path $VcpkgRoot 'installed\x86-windows')",
-        '',
-        'Patched project files:',
-        '- SVGPlugin\SVGPluginMysticThumbs.vcxproj',
-        '- FFMpegPlugin\FFMpegPluginMysticThumbs.vcxproj',
-        '',
-        'Project wiring:',
-        '- Each project now imports MysticThumbs.ExternalDeps.props',
-        '- SVG uses $(MysticThumbsResvgInclude) and $(MysticThumbsResvgLib)',
-        '- FFMpeg uses $(MysticThumbsFFmpegInclude) and $(MysticThumbsFFmpegLib)',
-        '',
-        'Reminder:',
-        '- The FFmpeg runtime DLLs still need to sit alongside the built',
-        '  .mtp plugin DLLs when you test or deploy the FFmpeg plugin.'
+    foreach ($node in $nodes) {
+        $include = [string]$node.Include
+        if ($include -match '^([^|]+)\|([^|]+)$') {
+            $cfg  = $matches[1]
+            $plat = $matches[2]
+            if (($plat -eq 'x64' -or $plat -eq 'Win32') -and ($result[$plat] -notcontains $cfg)) {
+                $result[$plat] = @($result[$plat]) + @($cfg)
+            }
+        }
+    }
+
+    if (@($result["x64"]).Count -eq 0)   { $result["x64"] = @("Debug", "Release") }
+    if (@($result["Win32"]).Count -eq 0) { $result["Win32"] = @("Debug", "Release") }
+
+    return $result
+}
+function Get-MatchingDlls {
+    param(
+        [Parameter(Mandatory = $true)][string]$BinDir,
+        [Parameter(Mandatory = $true)][string[]]$Patterns
     )
 
-    $summary = $summaryLines -join "`r`n"
+    $matches = New-Object System.Collections.Generic.List[System.IO.FileInfo]
+    foreach ($pattern in $Patterns) {
+        $files = @(Get-ChildItem -LiteralPath $BinDir -Filter $pattern -File -ErrorAction SilentlyContinue | Sort-Object Name)
+        if ($files.Count -eq 0) {
+            Write-Log "No DLL matched pattern '$pattern' in $BinDir" Yellow
+            continue
+        }
 
-    Write-Log $summary Green
-    Show-CompletionDialog -Text $summary
+        $chosen = $files[0]
+        [void]$matches.Add($chosen)
+    }
+
+    return @($matches)
+}
+
+function Deploy-FFmpegRuntimeDlls {
+    param([Parameter(Mandatory = $true)][string]$FFMpegProjectPath)
+
+    $cfgs = Get-FFMpegConfigurations -ProjectPath $FFMpegProjectPath
+    $appPluginsRoot = Join-Path $env:APPDATA "MysticThumbs\Plugins"
+    $x64Bin = Join-Path $VcpkgRoot "installed\x64-windows\bin"
+    $x86Bin = Join-Path $VcpkgRoot "installed\x86-windows\bin"
+
+    if (-not (Test-Path -LiteralPath $x64Bin)) { throw "FFmpeg x64 bin directory not found: $x64Bin" }
+    if (-not (Test-Path -LiteralPath $x86Bin)) { throw "FFmpeg x86 bin directory not found: $x86Bin" }
+
+    $x64Dlls = Get-MatchingDlls -BinDir $x64Bin -Patterns $FFmpegDllPatterns
+    $x86Dlls = Get-MatchingDlls -BinDir $x86Bin -Patterns $FFmpegDllPatterns
+
+    $copiedTotal = 0
+    $existingTotal = 0
+
+    foreach ($cfg in @($cfgs["x64"])) {
+        $targetDir = Join-Path $appPluginsRoot ("64\" + $cfg)
+        Ensure-Directory $targetDir
+
+        foreach ($dll in $x64Dlls) {
+            $dst = Join-Path $targetDir $dll.Name
+            if (Test-Path -LiteralPath $dst) {
+                $existingTotal++
+            } else {
+                Copy-Item -LiteralPath $dll.FullName -Destination $dst
+                $copiedTotal++
+            }
+        }
+        Add-Summary (" - x64 runtime DLLs target: {0}" -f $targetDir)
+    }
+
+    foreach ($cfg in @($cfgs["Win32"])) {
+        $targetDir = Join-Path $appPluginsRoot ("32\" + $cfg)
+        Ensure-Directory $targetDir
+
+        foreach ($dll in $x86Dlls) {
+            $dst = Join-Path $targetDir $dll.Name
+            if (Test-Path -LiteralPath $dst) {
+                $existingTotal++
+            } else {
+                Copy-Item -LiteralPath $dll.FullName -Destination $dst
+                $copiedTotal++
+            }
+        }
+        Add-Summary (" - x86 runtime DLLs target: {0}" -f $targetDir)
+    }
+
+    Add-Summary " - FFmpeg DLL patterns:"
+    foreach ($pattern in $FFmpegDllPatterns) {
+        Add-Summary ("   {0}" -f $pattern)
+    }
+
+    Write-Log ("FFmpeg runtime DLL deployment complete. Copied={0}, AlreadyPresent={1}" -f $copiedTotal, $existingTotal) Green
 }
 
 try {
-    $dialogResult = Show-StartupDialog
-    if ($dialogResult -eq [System.Windows.Forms.DialogResult]::OK) {
-        Run-Setup
+    "" | Set-Content -LiteralPath $LogPath -Encoding UTF8
+
+    if (-not (Show-IntroDialog)) {
+        Write-Log "Setup cancelled by user." Yellow
+        exit 0
     }
-    else {
-        Write-Log 'Setup cancelled by user.' Yellow
-    }
+
+    Write-Log "Starting setup..." Green
+
+    Add-Summary "Setup completed successfully."
+    Add-Summary ""
+    Add-Summary "Created / updated:"
+    Add-Summary " - $ExternalRoot"
+    Add-Summary " - $PropsPath"
+    Add-Summary ""
+
+    Ensure-ResvgBuilt
+    Ensure-VcpkgAndFFmpeg
+    Write-ExternalDepsProps
+
+    $svgProjectPath    = Get-ExpectedProjectPath -RepoRoot $RepoRoot -ProjectSubdir "SVGPlugin"    -ProjectFileName "SVGPluginMysticThumbs.vcxproj"
+    $ffmpegProjectPath = Get-ExpectedProjectPath -RepoRoot $RepoRoot -ProjectSubdir "FFMpegPlugin" -ProjectFileName "FFMpegPluginMysticThumbs.vcxproj"
+
+    Ensure-PropsImport -ProjectPath $svgProjectPath
+    Ensure-PropsImport -ProjectPath $ffmpegProjectPath
+
+    Update-VcxprojDependencyConfig -ProjectPath $svgProjectPath    -IncludeMacro '$(MysticThumbsResvgInclude)'   -LibMacro '$(MysticThumbsResvgLib)'
+    Update-VcxprojDependencyConfig -ProjectPath $ffmpegProjectPath -IncludeMacro '$(MysticThumbsFFmpegInclude)' -LibMacro '$(MysticThumbsFFmpegLib)'
+
+    Add-Summary ""
+    Add-Summary "Project integration:"
+    Add-Summary " - SVG project:"
+    Add-Summary "   $svgProjectPath"
+    Add-Summary " - FFMpeg project:"
+    Add-Summary "   $ffmpegProjectPath"
+
+    Add-Summary ""
+    Add-Summary "FFmpeg runtime DLL deployment:"
+    Deploy-FFmpegRuntimeDlls -FFMpegProjectPath $ffmpegProjectPath
+
+    Add-Summary ""
+    Add-Summary "The script generated MysticThumbs.ExternalDeps.props"
+    Add-Summary "and patched the SVG and FFMpeg project files to use it."
+    Add-Summary ""
+    Add-Summary "Log file:"
+    Add-Summary " - $LogPath"
+
+    Show-CompletionDialog ($SummaryLines -join "`r`n")
+    exit 0
 }
 catch {
-    $message = $_.Exception.Message
-    Write-Log "ERROR: $message" Red
+    $msg = $_.Exception.Message
+    Write-Log "ERROR: $msg" Red
     [System.Windows.Forms.MessageBox]::Show(
-        $message + "`n`nSee log:`n$LogPath",
-        'Setup Failed',
+        "ERROR: $msg`r`n`r`nSee log:`r`n$LogPath",
+        "Setup Failed",
         [System.Windows.Forms.MessageBoxButtons]::OK,
         [System.Windows.Forms.MessageBoxIcon]::Error
     ) | Out-Null
