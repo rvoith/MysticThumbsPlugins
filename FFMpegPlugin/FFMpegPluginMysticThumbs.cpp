@@ -1243,7 +1243,6 @@ public:
 			// Report decoder info
 			if (m_log) m_log->logf(L"%sOpened decoder: %S", m_logTag.Tag(), dec->name);
 			if (m_log) m_log->logf(L"%sDecoder long name: %S", m_logTag.Tag(), dec->long_name ? dec->long_name : "(null)");
-			if (m_log) m_log->logf(L"%sDecoder pix_fmts: %p", m_logTag.Tag(), dec->pix_fmts);
 
 			// Once per process is enough, but here is OK for now
 			if (m_log) m_log->logf(L"%sFFmpeg version: %S", m_logTag.Tag(), av_version_info());
