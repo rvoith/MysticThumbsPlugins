@@ -1,4 +1,11 @@
-//	 FFMpegPluginMysticThumbs.cpp
+//	FFMpegPluginMysticThumbs.cpp
+// FFMpeg MysticThumbs Plugin by Voith's CODE
+// https://www.vcode.no
+//
+// Licensed under the MIT License. See LICENSE file in the project root.
+//
+// This project is not affiliated with MysticThumbs or MysticCoder Pty Ltd.
+
 
 // Avoid the std::max error:
 // error C2589: '(': illegal token on right side of '::'
@@ -102,10 +109,8 @@ extern "C" {
 
 	static const wchar_t* REG_LEAVE_TEMP = L"LeaveTempFiles";
 	static const wchar_t* REG_SWAP_RB = L"SwapRB";
-	static const wchar_t* REG_RETURN_DEBUG_FFMpeg_TN = L"ReturnDebugFFMpegThumbnail";
+	static const wchar_t* REG_RETURN_DEBUG_FFMPEG_THUMBNAIL = L"ReturnDebugFFMpegThumbnail";
 	static const wchar_t* REG_USE_DESIRED_SIZE_HINT = L"useDesiredSizeHint";
-	static const wchar_t* REG_MAX_FFMpeg_DIM = L"maxFFMpegDim";
-	static const wchar_t* REG_MAX_FFMpeg_BYTES = L"maxFFMpegBytes";
 
 	static const wchar_t* REG_THUMB_ENABLED = L"ThumbEnable";
 	static const wchar_t* REG_THUMB_SUBKEY = L"Thumbnailer";
@@ -176,10 +181,10 @@ extern "C" {
 				DWORD d = 0;
 				if (root.QueryDWORDValue(REG_LEAVE_TEMP, d) == ERROR_SUCCESS) leaveTempFiles = (d != 0);
 				if (root.QueryDWORDValue(REG_SWAP_RB, d) == ERROR_SUCCESS) swapRB = (d != 0);
-				if (root.QueryDWORDValue(REG_RETURN_DEBUG_FFMpeg_TN, d) == ERROR_SUCCESS) returnDebugFFMpegThumbnail = (d != 0);
+				if (root.QueryDWORDValue(REG_RETURN_DEBUG_FFMPEG_THUMBNAIL, d) == ERROR_SUCCESS) returnDebugFFMpegThumbnail = (d != 0);
 				if (root.QueryDWORDValue(REG_USE_DESIRED_SIZE_HINT, d) == ERROR_SUCCESS) useDesiredSizeHint = (d != 0);
 
-				if (root.QueryDWORDValue(REG_COLLAGE_ENABLE, d) == ERROR_SUCCESS) collage4 = (d != 0);
+				if (root.QueryDWORDValue(REG_COLLAGE_ENABLE, d) == ERROR_SUCCESS) collage4 = d;
 				if (root.QueryDWORDValue(REG_COLLAGE_MIN_SECONDS, d) == ERROR_SUCCESS) collageMinSeconds = d;
 
 				// External thumbnailer
@@ -214,20 +219,20 @@ extern "C" {
 
 				CRegKeyHelper<false> root(hRoot);
 
-				(void)root.SetDWORDValue(REG_LEAVE_TEMP, leaveTempFiles ? 1u : 0u);
-				(void)root.SetDWORDValue(REG_SWAP_RB, swapRB ? 1u : 0u);
-				(void)root.SetDWORDValue(REG_RETURN_DEBUG_FFMpeg_TN, returnDebugFFMpegThumbnail ? 1u : 0u);
-				(void)root.SetDWORDValue(REG_USE_DESIRED_SIZE_HINT, useDesiredSizeHint ? 1u : 0u);
+				root.SetDWORDValue(REG_LEAVE_TEMP, GetCheck(hDlg, IDC_CFG_MISC_LEAVE_TEMP));
+				root.SetDWORDValue(REG_SWAP_RB, GetCheck(hDlg, IDC_CFG_MISC_SWAP_RB));
+				root.SetDWORDValue(REG_RETURN_DEBUG_FFMPEG_THUMBNAIL, GetCheck(hDlg, IDC_CFG_MISC_RETURN_DEBUG));
+				root.SetDWORDValue(REG_USE_DESIRED_SIZE_HINT, GetCheck(hDlg, IDC_CFG_MISC_USE_DESIRED_SIZE_HINT));
 
-				(void)root.SetDWORDValue(REG_COLLAGE_ENABLE, collage4 ? 1u : 0u);
-				(void)root.SetDWORDValue(REG_COLLAGE_MIN_SECONDS, collageMinSeconds);
+				root.SetDWORDValue(REG_COLLAGE_ENABLE, GetCheck(hDlg, IDC_CFG_COLLAGE_ENABLE));
+				root.SetDWORDValue(REG_COLLAGE_MIN_SECONDS, GetUInt(hDlg, IDC_CFG_COLLAGE_MIN_SECONDS, collageMinSeconds));
 
 				CRegKeyHelper<> sub;
 				if (sub.Create(root, REG_THUMB_SUBKEY) == ERROR_SUCCESS)
 				{
-					(void)sub.SetDWORDValue(REG_THUMB_ENABLED, thumbEnabled ? 1u : 0u);
-					(void)sub.SetStringValue(REG_THUMB_PATH, thumbPath.c_str());
-					(void)sub.SetStringValue(REG_THUMB_PARAMS, thumbParams.c_str());
+					sub.SetDWORDValue(REG_THUMB_ENABLED, thumbEnabled ? 1u : 0u);
+					sub.SetStringValue(REG_THUMB_PATH, GetText(hDlg, IDC_CFG_THUMB_PATH).c_str());
+					sub.SetStringValue(REG_THUMB_PARAMS, GetText(hDlg, IDC_CFG_THUMB_PARAMS).c_str());
 				}
 			}
 		} config;
@@ -244,7 +249,7 @@ public:
 		const IMysticThumbsPluginContext* GetContext() const
 		{
 			return m_context;
-		}
+		} 
 
 		virtual LPCWSTR GetName() const override
 		{
@@ -271,7 +276,7 @@ public:
 			return ARRAYSIZE(s_extensions);
 		}
 		 
-		virtual LPCWSTR GetExtension(_In_ unsigned int index) const		override
+		virtual LPCWSTR GetExtension(_In_ unsigned int index) const override
 		{
 			if (index >= ARRAYSIZE(s_extensions))
 				return L"";
@@ -290,13 +295,13 @@ public:
 			config.Load();			
 
 			const unsigned int pingSizeHint = (ping.requestedWidth && ping.requestedHeight) ? std::max(1u, std::min(ping.requestedWidth, ping.requestedHeight)) : 0u;
-			m_logTag.UpdateFromStream(m_context ? m_context->GetStream() : nullptr, pingSizeHint);
+			m_logTag.UpdateFromStream(m_context->GetStream(), pingSizeHint);
 
 			IStream* pStream = m_context ? m_context->GetStream() : nullptr;
 			if (!pStream)
-				if (m_log) m_log->logf(L"%sPing: context stream is null", m_logTag.Tag());
+				m_log->logf(L"%sPing: context stream is null", m_logTag.Tag());
 
-			if (m_log) m_log->logf(L"%sPing (FFMpeg): File \"%s\"", m_logTag.Tag(), m_logTag.Name());
+			m_log->logf(L"%sPing (FFMpeg): File \"%s\"", m_logTag.Tag(), m_logTag.Name());
 
 			// Probe real media dimensions (preferred in V4) without generating a thumbnail.
 			unsigned int w = 0, h = 0;
@@ -318,7 +323,7 @@ public:
 				wroteTemp = WriteStreamToFile(pStream, mediaPath);
 				if (!wroteTemp)
 				{
-					if (m_log) m_log->logf(L"%sPing: WriteStreamToFile failed", m_logTag.Tag());
+					m_log->logf(L"%sPing: WriteStreamToFile failed", m_logTag.Tag());
 				}
 			}
 
@@ -379,14 +384,17 @@ public:
 
 			ping.width = w;
 			ping.height = h;
-			ping.bitDepth = 32;
+			// There's no assumed alpha channel so let's run with 24 bit as a ping reference.
+			// This is mostly for the property system as video files may have actual different bit depths based on internal format.
+			// Perhaps there's a "quick" way to figure this out using ffmpeg in a ping?
+			ping.bitDepth = 24;
 			return true;
 		}
 
 		virtual bool GetCapabilities(_Out_ MysticThumbsPluginCapabilities& capabilities) override
 		{
 			capabilities = {};
-			capabilities |= PluginCapabilities_CanConfigure | PluginCapabilities_IsProcedural;
+			capabilities |= PluginCapabilities_CanConfigure;
 			return true;
 		}
 
@@ -811,20 +819,24 @@ public:
 			if (!lplpOutputImage) return E_POINTER;
 			*lplpOutputImage = nullptr;
 
-			IStream* pStream = m_context ? m_context->GetStream() : nullptr;
-			if (!pStream) return E_FAIL;
+			IStream* pStream = m_context->GetStream(); // this is guaranteed non-null
 
 			config.context = m_context;
 			config.Load();
-			const unsigned int desiredSize = std::max(1u, std::min(params.desiredWidth, params.desiredHeight));
 
-			if (m_log) m_log->logf(L"%sGenerate: start: %ux%u", m_logTag.Tag(), (unsigned)params.desiredWidth, (unsigned)params.desiredHeight);
+            //const unsigned int desiredSize = std::max(1u, std::min(params.desiredWidth, params.desiredHeight));
+
+			// As per the header docs, render the actual image size for proper results. MysticThumbs will take care of the rest.
+			const unsigned int desiredSize = std::max(
+				this->config.context->GetPing()->width,
+				this->config.context->GetPing()->height);
+
+			m_log->logf(L"%sGenerate: start: %ux%u", m_logTag.Tag(), (unsigned)params.desiredWidth, (unsigned)params.desiredHeight);
 
 			bool hasAlpha = false;
 			unsigned int w = 0, h = 0;
 
-			// Reuse your existing pipeline, which returns LocalAlloc RGBA.
-			unsigned char* rgba = GenerateImage(
+			std::vector<unsigned char> rgba = GenerateImage(
 				pStream,
 				desiredSize,
 				(unsigned int)params.flags,
@@ -832,30 +844,18 @@ public:
 				w,
 				h);
 
-			if (!rgba || w == 0 || h == 0)
+			if (w == 0 || h == 0)
 				return E_FAIL;
 
 			// Wrap raw RGBA into an IWICBitmap
+
+			HRESULT hr;
 			CComPtr<IWICImagingFactory> factory;
-			HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
-				IID_PPV_ARGS(&factory));
-			if (FAILED(hr) || !factory)
-			{
-				LocalFree(rgba);
+			if (FAILED(hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))))
 				return E_FAIL;
-			}
 
 			const UINT stride = (UINT)(w * 4);
 			const UINT bufSize = (UINT)(stride * h);
-
-			CComPtr<IWICBitmap> bmp;
-			hr = factory->CreateBitmapFromMemory(
-				w, h,
-				GUID_WICPixelFormat32bppRGBA,
-				stride,
-				bufSize,
-				rgba,
-				&bmp);
 
 			// MysticThumbs owns the IWICBitmapSource; BUT *I* own rgba buffer.
 			// CreateBitmapFromMemory does NOT copy by default; it references the buffer.
@@ -863,7 +863,7 @@ public:
 			//
 			// Solution: create a real WIC bitmap and CopyPixels into it.
 
-			if (SUCCEEDED(hr) && bmp)
+			if (SUCCEEDED(hr))
 			{
 				CComPtr<IWICBitmap> owned;
 				hr = factory->CreateBitmap(
@@ -873,71 +873,86 @@ public:
 					WICBitmapCacheOnLoad,
 					&owned);
 
-				if (FAILED(hr) || !owned)
-				{
-					LocalFree(rgba);
+				if (FAILED(hr))
 					return E_FAIL;
-				}
 
 				WICRect rc{ 0, 0, (INT)w, (INT)h };
 
 				CComPtr<IWICBitmapLock> lock;
-				hr = owned->Lock(&rc, WICBitmapLockWrite, &lock);
-				if (FAILED(hr) || !lock)
-				{
-					LocalFree(rgba);
+				if (FAILED(hr = owned->Lock(&rc, WICBitmapLockWrite, &lock)))
 					return E_FAIL;
-				}
 
 				UINT stride = 0;
 				UINT bufferSize = 0;
 				BYTE* dst = nullptr;
 
 				hr = lock->GetStride(&stride);
-				if (FAILED(hr)) { LocalFree(rgba); return E_FAIL; }
+				if (FAILED(hr))
+					return E_FAIL;
 
-				hr = lock->GetDataPointer(&bufferSize, &dst);
-				if (FAILED(hr)) { LocalFree(rgba); return E_FAIL; }
+				if (FAILED(hr = lock->GetDataPointer(&bufferSize, &dst)))
+					return E_FAIL;
+
+				// IM: note - this line by line copy is not strictly necessary for a RGBA 32 bit format, it's going to be stride safe to copy everything - at least currently.
+                // - also, you could just check srcstride == dststride and do one big copy if they match. but this is safer for now and the performance difference should be negligible for typical thumbnail sizes.
+                // - another option is using thread based parallel line copying for larger images, but again probably not worth it for typical thumbnail sizes.
 
 				// Copy row by row (stride-safe)
 				const UINT srcStride = w * 4;
 				for (UINT y = 0; y < h; ++y)
 				{
-					memcpy(dst + y * stride, rgba + y * srcStride, srcStride);
+					memcpy(dst + y * stride, rgba.data() + y * srcStride, srcStride);
 				}
 
 				// Now WIC owns the pixels
-				LocalFree(rgba);
-
 				*lplpOutputImage = owned.Detach();
 				return S_OK;
 
 			}
-
-			LocalFree(rgba);
 			return E_FAIL;
 		}
 
+		// Keep working data organized for free automatic cleanup
+		struct AVContext
+		{
+			// Creation order
+			AVDictionary* opts{};
+			AVFormatContext* fmt{};
+			AVCodecContext* cc{};
+			const AVCodec* dec{};
+			AVPacket* pkt{};
+			AVFrame* frame{};
+			SwsContext* sws{};
+			AVFrame* dst{};
 
-		unsigned char* RenderWithFFmpegCollage4FromFile(
+			// Reverse cleanup order
+			~AVContext() {
+                if(dst) av_frame_free(&dst);
+                if(sws) sws_freeContext(sws);
+                if(pkt) av_packet_free(&pkt);
+                if(frame) av_frame_free(&frame);
+				if(cc) avcodec_free_context(&cc);
+				if(fmt) avformat_close_input(&fmt);
+				if(opts) av_dict_free(&opts);
+			}
+        };
+
+		std::vector<unsigned char> RenderWithFFmpegCollage4FromFile(
 			const std::wstring& mediaPath,
-			unsigned int desiredSize,       // overall output size (square)
+			unsigned int desiredSize,       // overall output size (not necessarily square (if only one dimension then it's width)
 			bool useDesiredSize,
 			bool& hasAlpha,
 			unsigned int& width,
 			unsigned int& height)
 		{
+			AVContext ctx{};
+
 			hasAlpha = false;
 			width = height = 0;
 
-			if (desiredSize == 0) desiredSize = 256;
-
-			// Decide final output size (square is ideal for collage)
-			unsigned int outW = desiredSize;
-			unsigned int outH = desiredSize;
-
-			if (!useDesiredSize)
-				outW = outH = desiredSize;
+			// Decide final output size (square is NOT ideal for collage - use the frame size actual as usual)
+			unsigned int outW = config.context->GetPing()->width;
+			unsigned int outH = config.context->GetPing()->height;
 
 			// Tile size (2x2)
 			const unsigned int tileW = std::max(1u, outW / 2);
@@ -947,97 +962,72 @@ public:
 			const size_t bufSize = (size_t)outW * (size_t)outH * 4;
 
 			// FFmpeg open (file only)
-			AVDictionary* opts = nullptr;
-			av_dict_set(&opts, "protocol_whitelist", "file", 0);
+			av_dict_set(&ctx.opts, "protocol_whitelist", "file", 0);
 
 			std::string pathUtf8 = WideToUtf8(mediaPath);
 			if (pathUtf8.empty())
 			{
-				av_dict_free(&opts);
-				return nullptr;
+				return {};
 			}
 
-			AVFormatContext* fmt = nullptr;
-			int rc = avformat_open_input(&fmt, pathUtf8.c_str(), nullptr, &opts);
-			av_dict_free(&opts);
-			if (rc < 0 || !fmt)
-				return nullptr;
+			int rc = avformat_open_input(&ctx.fmt, pathUtf8.c_str(), nullptr, &ctx.opts);
+			if (rc < 0 || !ctx.fmt)
+				return {};
 
-			rc = avformat_find_stream_info(fmt, nullptr);
+			rc = avformat_find_stream_info(ctx.fmt, nullptr);
 			if (rc < 0)
 			{
-				avformat_close_input(&fmt);
-				return nullptr;
+                return {};
 			}
 
 			const AVCodec* dec = nullptr;
-			const int vIndex = av_find_best_stream(fmt, AVMEDIA_TYPE_VIDEO, -1, -1, &dec, 0);
+			const int vIndex = av_find_best_stream(ctx.fmt, AVMEDIA_TYPE_VIDEO, -1, -1, &dec, 0);
 			if (vIndex < 0 || !dec)
 			{
-				avformat_close_input(&fmt);
-				return nullptr;
+                return {};
 			}
 
-			AVCodecContext* cc = avcodec_alloc_context3(dec);
-			if (!cc)
+			ctx.cc = avcodec_alloc_context3(dec);
+			if (!ctx.cc)
 			{
-				avformat_close_input(&fmt);
-				return nullptr;
+                return {};
 			}
 
-			rc = avcodec_parameters_to_context(cc, fmt->streams[vIndex]->codecpar);
+			rc = avcodec_parameters_to_context(ctx.cc, ctx.fmt->streams[vIndex]->codecpar);
 			if (rc < 0)
 			{
-				avcodec_free_context(&cc);
-				avformat_close_input(&fmt);
-				return nullptr;
+                return {};
 			}
 
 			// Keep it predictable in Explorer
-			cc->thread_count = 1;
-			cc->thread_type = 0;
+			ctx.cc->thread_count = 1;
+			ctx.cc->thread_type = 0;
 
-			rc = avcodec_open2(cc, dec, nullptr);
+			rc = avcodec_open2(ctx.cc, dec, nullptr);
 			if (rc < 0)
 			{
-				avcodec_free_context(&cc);
-				avformat_close_input(&fmt);
-				return nullptr;
+                return {};
 			}
 
 			// Require valid duration for % seeking
-			if (fmt->duration <= 0 || fmt->duration == AV_NOPTS_VALUE)
+			if (ctx.fmt->duration <= 0 || ctx.fmt->duration == AV_NOPTS_VALUE)
 			{
-				avcodec_free_context(&cc);
-				avformat_close_input(&fmt);
-				return nullptr;
+                return {};
 			}
 
-			const double durationSeconds = (double)fmt->duration / (double)AV_TIME_BASE;
+			const double durationSeconds = (double)ctx.fmt->duration / (double)AV_TIME_BASE;
 			if (durationSeconds < (double)config.collageMinSeconds)
 			{
-				avcodec_free_context(&cc);
-				avformat_close_input(&fmt);
-				return nullptr;
+                return {};
 			}
 
 			// Allocate final output
-			unsigned char* out = (unsigned char*)LocalAlloc(LMEM_FIXED, bufSize);
-			if (!out)
-			{
-				avcodec_free_context(&cc);
-				avformat_close_input(&fmt);
-				return nullptr;
-			}
-			memset(out, 0, bufSize);
+            std::vector<unsigned char> out(bufSize); // if allocation were to fail it'll exception out, which is fine
 
-			AVFrame* frame = av_frame_alloc();
-			if (!frame)
+			ctx.frame = av_frame_alloc();
+			if (!ctx.frame)
 			{
-				LocalFree(out);
-				avcodec_free_context(&cc);
-				avformat_close_input(&fmt);
-				return nullptr;
+                return {};
 			}
 
 			struct Tile { int x; int y; double pct; };
@@ -1048,7 +1038,7 @@ public:
 				{ (int)tileW, (int)tileH,  0.75 },
 			};
 
-			AVStream* st = fmt->streams[vIndex];
+			const AVStream* st = ctx.fmt->streams[vIndex];
 
 			auto ProbeLooksBlankFrame = [&](AVFrame* fr) -> bool
 				{
@@ -1078,20 +1068,20 @@ public:
 			auto DecodeAtTsWithBlankRetries = [&](int64_t tsBase) -> bool
 				{
 					// Try base ts
-					av_frame_unref(frame);
-					if (DecodeFrameNearTimestamp(fmt, cc, vIndex, frame, tsBase) && !ProbeLooksBlankFrame(frame))
+					av_frame_unref(ctx.frame);
+					if (DecodeFrameNearTimestamp(ctx.fmt, ctx.cc, vIndex, ctx.frame, tsBase) && !ProbeLooksBlankFrame(ctx.frame))
 						return true;
 
 					// Retry at +0.5s and +1.0s (converted to stream time_base)
 					const int64_t halfSec = av_rescale_q((int64_t)(AV_TIME_BASE / 2), AV_TIME_BASE_Q, st->time_base);
 					const int64_t oneSec = av_rescale_q((int64_t)(AV_TIME_BASE), AV_TIME_BASE_Q, st->time_base);
 
-					av_frame_unref(frame);
-					if (DecodeFrameNearTimestamp(fmt, cc, vIndex, frame, tsBase + halfSec) && !ProbeLooksBlankFrame(frame))
+					av_frame_unref(ctx.frame);
+					if (DecodeFrameNearTimestamp(ctx.fmt, ctx.cc, vIndex, ctx.frame, tsBase + halfSec) && !ProbeLooksBlankFrame(ctx.frame))
 						return true;
 
-					av_frame_unref(frame);
-					if (DecodeFrameNearTimestamp(fmt, cc, vIndex, frame, tsBase + oneSec) && !ProbeLooksBlankFrame(frame))
+					av_frame_unref(ctx.frame);
+					if (DecodeFrameNearTimestamp(ctx.fmt, ctx.cc, vIndex, ctx.frame, tsBase + oneSec) && !ProbeLooksBlankFrame(ctx.frame))
 						return true;
 
 					return false;
@@ -1106,12 +1096,12 @@ public:
 				{
 					// Avoid start blink: max(1s, 2% duration)
 					const int64_t t1s = 1 * AV_TIME_BASE;
-					const int64_t t2pct = (int64_t)((double)fmt->duration * 0.02);
+					const int64_t t2pct = (int64_t)((double)ctx.fmt->duration * 0.02);
 					t_us = std::max(t1s, t2pct);
 				}
 				else
 				{
-					t_us = (int64_t)((double)fmt->duration * tiles[i].pct);
+					t_us = (int64_t)((double)ctx.fmt->duration * tiles[i].pct);
 				}
 
 				// AV_TIME_BASE -> stream time_base, and add start_time offset
@@ -1127,12 +1117,12 @@ public:
 
 				// Destination pointer for tile (top-left pixel)
 				unsigned char* tilePtr =
-					out + (size_t)tiles[i].y * (size_t)outW * 4 + (size_t)tiles[i].x * 4;
+					out.data() + (size_t)tiles[i].y * (size_t)outW * 4 + (size_t)tiles[i].x * 4;
 
 				// Scale decoded frame into a contiguous tile buffer then blit row-wise
 				std::vector<unsigned char> tileBuf((size_t)tileW * (size_t)tileH * 4);
 
-				if (!ScaleFrameToRgbaLetterboxedAutoBg(frame, tileBuf.data(), (int)tileW, (int)tileH, (int)tileW * 4))
+				if (!ScaleFrameToRgbaLetterboxedAutoBg(ctx.frame, tileBuf.data(), (int)tileW, (int)tileH, (int)tileW * 4))
 					continue;
 
 				for (unsigned int y = 0; y < tileH; ++y)
@@ -1143,17 +1133,13 @@ public:
 				}
 			}
 
-			av_frame_free(&frame);
-			avcodec_free_context(&cc);
-			avformat_close_input(&fmt);
-
 			hasAlpha = true;
 			width = outW;
 			height = outH;
 			return out;
 		}
 
-		unsigned char* RenderWithFFmpegFromFile(
+		std::vector<unsigned char> RenderWithFFmpegFromFile(
 			const std::wstring& mediaPath,
 			unsigned int desiredSize,
 			bool useDesiredSize,
@@ -1161,6 +1147,8 @@ public:
 			unsigned int& width,
 			unsigned int& height)
 		{
+            AVContext ctx{};
+
 			hasAlpha = false;
 			width = height = 0;
 
@@ -1168,94 +1156,78 @@ public:
 				desiredSize = 256;
 
 			// I open a local temp file, so restrict protocols to file only.
-			AVDictionary* opts = nullptr;
-			av_dict_set(&opts, "protocol_whitelist", "file", 0);
+			av_dict_set(&ctx.opts, "protocol_whitelist", "file", 0);
 
 			std::string pathUtf8 = WideToUtf8(mediaPath);
 			if (pathUtf8.empty())
 			{
-				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: WideToUtf8 failed", m_logTag.Tag());
-				av_dict_free(&opts);
-				return nullptr;
+				m_log->logf(L"%sRenderWithFFmpegFromFile: WideToUtf8 failed", m_logTag.Tag());
+				return {};
 			}
 
-			AVFormatContext* fmt = nullptr;
-			int rc = avformat_open_input(&fmt, pathUtf8.c_str(), nullptr, &opts);
-			av_dict_free(&opts);
-			if (rc < 0 || !fmt)
+			int rc = avformat_open_input(&ctx.fmt, pathUtf8.c_str(), nullptr, &ctx.opts);
+			if (rc < 0 || !ctx.fmt)
 			{
-				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: avformat_open_input failed", m_logTag.Tag());
-				return nullptr;
+				m_log->logf(L"%sRenderWithFFmpegFromFile: avformat_open_input failed", m_logTag.Tag());
+                return {};
 			}
 
-			rc = avformat_find_stream_info(fmt, nullptr);
+			rc = avformat_find_stream_info(ctx.fmt, nullptr);
 			if (rc < 0)
 			{
-				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: avformat_find_stream_info failed", m_logTag.Tag());
-				avformat_close_input(&fmt);
-				return nullptr;
+				m_log->logf(L"%sRenderWithFFmpegFromFile: avformat_find_stream_info failed", m_logTag.Tag());
+				return {};
 			}
 
-			const AVCodec* dec = nullptr;
-			const int vIndex = av_find_best_stream(fmt, AVMEDIA_TYPE_VIDEO, -1, -1, &dec, 0);
-			if (vIndex < 0 || !dec)
+			const int vIndex = av_find_best_stream(ctx.fmt, AVMEDIA_TYPE_VIDEO, -1, -1, &ctx.dec, 0);
+			if (vIndex < 0 || !ctx.dec)
 			{
-				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: no video stream (audio-only not supported yet", m_logTag.Tag());
-				avformat_close_input(&fmt);
-				return nullptr;
+				m_log->logf(L"%sRenderWithFFmpegFromFile: no video stream (audio-only not supported yet", m_logTag.Tag());
+				return {};
 			}
 
-			AVCodecContext* cc = avcodec_alloc_context3(dec);
-			if (!cc)
+			ctx.cc = avcodec_alloc_context3(ctx.dec);
+			if (!ctx.cc)
 			{
-				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: avcodec_alloc_context3 failed", m_logTag.Tag());
-				avformat_close_input(&fmt);
-				return nullptr;
+				m_log->logf(L"%sRenderWithFFmpegFromFile: avcodec_alloc_context3 failed", m_logTag.Tag());
+				return {};
 			}
 
-			rc = avcodec_parameters_to_context(cc, fmt->streams[vIndex]->codecpar);
+			rc = avcodec_parameters_to_context(ctx.cc, ctx.fmt->streams[vIndex]->codecpar);
 			if (rc < 0)
 			{
-				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: avcodec_parameters_to_context failed", m_logTag.Tag());
-				avcodec_free_context(&cc);
-				avformat_close_input(&fmt);
-				return nullptr;
+				m_log->logf(L"%sRenderWithFFmpegFromFile: avcodec_parameters_to_context failed", m_logTag.Tag());
+				return {};
 			}
 
 			// Keep it predictable in Explorer.
-			cc->thread_count = 1;
-			cc->thread_type = 0;
+			ctx.cc->thread_count = 1;
+			ctx.cc->thread_type = 0;
 
-			rc = avcodec_open2(cc, dec, nullptr);
+			rc = avcodec_open2(ctx.cc, ctx.dec, nullptr);
 			if (rc < 0)
 			{
-				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: avcodec_open2 failed", m_logTag.Tag());
-				avcodec_free_context(&cc);
-				avformat_close_input(&fmt);
-				return nullptr;
+				m_log->logf(L"%sRenderWithFFmpegFromFile: avcodec_open2 failed", m_logTag.Tag());
+				return {};
 			}
 
 			// Report decoder info
-			if (m_log) m_log->logf(L"%sOpened decoder: %S", m_logTag.Tag(), dec->name);
-			if (m_log) m_log->logf(L"%sDecoder long name: %S", m_logTag.Tag(), dec->long_name ? dec->long_name : "(null)");
-			if (m_log) m_log->logf(L"%sDecoder pix_fmts: %p", m_logTag.Tag(), dec->pix_fmts);
+			m_log->logf(L"%sOpened decoder: %S", m_logTag.Tag(), ctx.dec->name);
+			m_log->logf(L"%sDecoder long name: %S", m_logTag.Tag(), ctx.dec->long_name ? ctx.dec->long_name : "(null)");
+			m_log->logf(L"%sDecoder pix_fmts: %p", m_logTag.Tag(), ctx.dec->pix_fmts);
 
 			// Once per process is enough, but here is OK for now
-			if (m_log) m_log->logf(L"%sFFmpeg version: %S", m_logTag.Tag(), av_version_info());
-			if (m_log) m_log->logf(L"%sFFmpeg config: %S", m_logTag.Tag(), avcodec_configuration());
+			m_log->logf(L"%sFFmpeg version: %S", m_logTag.Tag(), av_version_info());
+			m_log->logf(L"%sFFmpeg config: %S", m_logTag.Tag(), avcodec_configuration());
 
 			// Decode a representative frame by trying a few timestamps.
 			// If the decoded frame looks blank/near-black, try another timestamp.
-			AVPacket* pkt = av_packet_alloc();
-			AVFrame* frame = av_frame_alloc();
-			if (!pkt || !frame)
+			ctx.pkt = av_packet_alloc();
+			ctx.frame = av_frame_alloc();
+			if (!ctx.pkt || !ctx.frame)
 			{
-				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: av_packet_alloc/av_frame_alloc failed", m_logTag.Tag());
-				av_packet_free(&pkt);
-				av_frame_free(&frame);
-				avcodec_free_context(&cc);
-				avformat_close_input(&fmt);
-				return nullptr;
+				m_log->logf(L"%sRenderWithFFmpegFromFile: av_packet_alloc/av_frame_alloc failed", m_logTag.Tag());
+				return {};
 			}
 
 			auto ProbeLooksBlank = [&](AVFrame* fr) -> bool
@@ -1273,57 +1245,55 @@ public:
 
 					std::vector<unsigned char> probe((size_t)probeW * (size_t)probeH * 4, 0);
 
-					SwsContext* swsProbe = sws_getContext(
+					AVContext probeCtx{};
+
+					probeCtx.sws = sws_getContext(
 						(int)srcW, (int)srcH, (AVPixelFormat)fr->format,
 						(int)probeW, (int)probeH, AV_PIX_FMT_RGBA,
 						SWS_BILINEAR, nullptr, nullptr, nullptr);
 
-					if (!swsProbe)
+					if (!probeCtx.sws)
 					{
 						// If I can't probe-convert, don't reject the frame as blank.
 						return false;
 					}
 
-					AVFrame* dstProbe = av_frame_alloc();
-					if (!dstProbe)
+					probeCtx.dst = av_frame_alloc();
+					if (!probeCtx.dst)
 					{
-						sws_freeContext(swsProbe);
 						return false;
 					}
 
-					dstProbe->format = AV_PIX_FMT_RGBA;
-					dstProbe->width = (int)probeW;
-					dstProbe->height = (int)probeH;
+					probeCtx.dst->format = AV_PIX_FMT_RGBA;
+					probeCtx.dst->width = (int)probeW;
+					probeCtx.dst->height = (int)probeH;
 
-					av_image_fill_arrays(dstProbe->data, dstProbe->linesize,
+					av_image_fill_arrays(probeCtx.dst->data, probeCtx.dst->linesize,
 						probe.data(), AV_PIX_FMT_RGBA,
 						(int)probeW, (int)probeH, 1);
 
-					sws_scale(swsProbe, fr->data, fr->linesize, 0, (int)srcH,
-						dstProbe->data, dstProbe->linesize);
-
-					sws_freeContext(swsProbe);
-					av_frame_free(&dstProbe);
+					sws_scale(probeCtx.sws, fr->data, fr->linesize, 0, (int)srcH,
+							  probeCtx.dst->data, probeCtx.dst->linesize);
 
 					bool blank = LooksBlankOrNearBlackRGBA(probe.data(), probeW, probeH);
-					if (blank) if (m_log) m_log->logf(L"%sProbeLooksBlank: rejected frame", m_logTag.Tag());
+					if (blank) m_log->logf(L"%sProbeLooksBlank: rejected frame", m_logTag.Tag());
 					return blank;
 				};
 
 			auto TryDecodeAtUs = [&](int64_t t_us) -> bool
 				{
 					// Ensure clean decoder state between tries
-					avcodec_flush_buffers(cc);
+					avcodec_flush_buffers(ctx.cc);
 
-					AVStream* st = fmt->streams[vIndex];
+					AVStream* st = ctx.fmt->streams[vIndex];
 					int64_t ts = av_rescale_q(t_us, AV_TIME_BASE_Q, st->time_base);
 					if (st->start_time != AV_NOPTS_VALUE)
 						ts += st->start_time;
 
-					if (!DecodeFrameNearTimestamp(fmt, cc, vIndex, frame, ts))
+					if (!DecodeFrameNearTimestamp(ctx.fmt, ctx.cc, vIndex, ctx.frame, ts))
 						return false;
 
-					if (ProbeLooksBlank(frame))
+					if (ProbeLooksBlank(ctx.frame))
 						return false;
 
 					return true;
@@ -1333,7 +1303,7 @@ public:
 
 			// Duration is typically in microseconds (AV_TIME_BASE units) for AVFormatContext.
 			const int64_t dur_us =
-				(fmt->duration > 0 && fmt->duration != AV_NOPTS_VALUE) ? fmt->duration : 0;
+				(ctx.fmt->duration > 0 && ctx.fmt->duration != AV_NOPTS_VALUE) ? ctx.fmt->duration : 0;
 
 			const int64_t t1s = 1 * AV_TIME_BASE;
 			int64_t t10 = (dur_us > 0) ? (dur_us / 10) : t1s;
@@ -1360,19 +1330,19 @@ public:
 			// and still reject blank/near-black.
 			if (!gotFrame)
 			{
-				(void)av_seek_frame(fmt, vIndex, 0, AVSEEK_FLAG_BACKWARD);
-				avcodec_flush_buffers(cc);
+				(void)av_seek_frame(ctx.fmt, vIndex, 0, AVSEEK_FLAG_BACKWARD);
+				avcodec_flush_buffers(ctx.cc);
 
 				// Helper: drain decoder until it would block (or we got a frame)
 				auto DrainOne = [&]() -> int
 					{
 						while (true)
 						{
-							int rr = avcodec_receive_frame(cc, frame);
+							int rr = avcodec_receive_frame(ctx.cc, ctx.frame);
 							if (rr == 0)
 							{
 								// Reject blank frames if you want
-								if (!ProbeLooksBlank(frame))
+								if (!ProbeLooksBlank(ctx.frame))
 									gotFrame = true;
 								return 0;
 							}
@@ -1387,7 +1357,7 @@ public:
 					{
 						while (true)
 						{
-							int sr = avcodec_send_packet(cc, p);
+							int sr = avcodec_send_packet(ctx.cc, p);
 							if (sr == 0)
 								return true;
 
@@ -1410,7 +1380,7 @@ public:
 
 				for (int readIters = 0; readIters < 2000 && !gotFrame; ++readIters)
 				{
-					rc = av_read_frame(fmt, pkt);
+					rc = av_read_frame(ctx.fmt, ctx.pkt);
 
 					if (rc == AVERROR_EOF)
 					{
@@ -1432,15 +1402,15 @@ public:
 						break;
 					}
 
-					if (pkt->stream_index != vIndex)
+					if (ctx.pkt->stream_index != vIndex)
 					{
-						av_packet_unref(pkt);
+						av_packet_unref(ctx.pkt);
 						continue;
 					}
 
 					// Send packet safely (don’t drop on EAGAIN)
-					bool ok = SendWithEagain(pkt);
-					av_packet_unref(pkt);
+					bool ok = SendWithEagain(ctx.pkt);
+					av_packet_unref(ctx.pkt);
 					if (!ok)
 						break;
 
@@ -1453,28 +1423,20 @@ public:
 
 			if (!gotFrame)
 			{
-				if (m_log) m_log->logf(
+				m_log->logf(
 					L"%sRenderWithFFmpegFromFile: codec=%S, pix_fmt=%d, failed to decode a frame",
 					m_logTag.Tag(),
-					dec->name,
-					(frame ? frame->format : -1));
-				av_packet_free(&pkt);
-				av_frame_free(&frame);
-				avcodec_free_context(&cc);
-				avformat_close_input(&fmt);
-				return nullptr;
+					ctx.dec->name,
+					(ctx.frame ? ctx.frame->format : -1));
+				return {};
 			}
 
-			const unsigned int srcW = (unsigned int)frame->width;
-			const unsigned int srcH = (unsigned int)frame->height;
+			const unsigned int srcW = (unsigned int)ctx.frame->width;
+			const unsigned int srcH = (unsigned int)ctx.frame->height;
 			if (srcW == 0 || srcH == 0)
 			{
-				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: decoded frame has invalid dimensions", m_logTag.Tag());
-				av_packet_free(&pkt);
-				av_frame_free(&frame);
-				avcodec_free_context(&cc);
-				avformat_close_input(&fmt);
-				return nullptr;
+				m_log->logf(L"%sRenderWithFFmpegFromFile: decoded frame has invalid dimensions", m_logTag.Tag());
+				return {};
 			}
 
 			// Decide output dimensions.
@@ -1490,94 +1452,55 @@ public:
 			const size_t h = (size_t)dstH;
 			if (w == 0 || h == 0)
 			{
-				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: invalid output size", m_logTag.Tag());
-				av_packet_free(&pkt);
-				av_frame_free(&frame);
-				avcodec_free_context(&cc);
-				avformat_close_input(&fmt);
-				return nullptr;
+				m_log->logf(L"%sRenderWithFFmpegFromFile: invalid output size", m_logTag.Tag());
+				return {};
 			}
 			if (w > (SIZE_MAX / 4) || (w * 4) > (SIZE_MAX / h))
 			{
-				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: size overflow", m_logTag.Tag());
-				av_packet_free(&pkt);
-				av_frame_free(&frame);
-				avcodec_free_context(&cc);
-				avformat_close_input(&fmt);
-				return nullptr;
+				m_log->logf(L"%sRenderWithFFmpegFromFile: size overflow", m_logTag.Tag());
+                return {};
 			}
-			const size_t bufSize = (w * 4) * h;
 
-			unsigned char* out = (unsigned char*)LocalAlloc(LMEM_FIXED, bufSize);
-			if (!out)
-			{
-				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: LocalAlloc failed", m_logTag.Tag());
-				av_packet_free(&pkt);
-				av_frame_free(&frame);
-				avcodec_free_context(&cc);
-				avformat_close_input(&fmt);
-				return nullptr;
-			}
-			memset(out, 0, bufSize);
-
-			SwsContext* sws = sws_getContext(
-				(int)srcW, (int)srcH, (AVPixelFormat)frame->format,
+			ctx.sws = sws_getContext(
+				(int)srcW, (int)srcH, (AVPixelFormat)ctx.frame->format,
 				(int)dstW, (int)dstH, AV_PIX_FMT_RGBA,
 				SWS_BILINEAR, nullptr, nullptr, nullptr);
 
-			if (!sws)
+			if (!ctx.sws)
 			{
-				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: sws_getContext failed", m_logTag.Tag());
-				LocalFree(out);
-				av_packet_free(&pkt);
-				av_frame_free(&frame);
-				avcodec_free_context(&cc);
-				avformat_close_input(&fmt);
-				return nullptr;
+				m_log->logf(L"%sRenderWithFFmpegFromFile: sws_getContext failed", m_logTag.Tag());
+                return {};
 			}
 
-			AVFrame* dst = av_frame_alloc();
-			if (!dst)
+			ctx.dst = av_frame_alloc();
+			if (!ctx.dst)
 			{
-				if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: av_frame_alloc failed", m_logTag.Tag());
-				sws_freeContext(sws);
-				LocalFree(out);
-				av_packet_free(&pkt);
-				av_frame_free(&frame);
-				avcodec_free_context(&cc);
-				avformat_close_input(&fmt);
-				return nullptr;
+				m_log->logf(L"%sRenderWithFFmpegFromFile: av_frame_alloc failed", m_logTag.Tag());
+                return {};
 			}
 
-			dst->format = AV_PIX_FMT_RGBA;
-			dst->width = (int)dstW;
-			dst->height = (int)dstH;
+			ctx.dst->format = AV_PIX_FMT_RGBA;
+			ctx.dst->width = (int)dstW;
+			ctx.dst->height = (int)dstH;
 
-			// Point the destination frame at our LocalAlloc buffer.
-			av_image_fill_arrays(dst->data, dst->linesize, out, AV_PIX_FMT_RGBA, (int)dstW, (int)dstH, 1);
+            const size_t bufSize = (w * 4) * h;
+            std::vector<unsigned char> out(bufSize);
 
-			sws_scale(sws, frame->data, frame->linesize, 0, (int)srcH, dst->data, dst->linesize);
+			av_image_fill_arrays(ctx.dst->data, ctx.dst->linesize, out.data(), AV_PIX_FMT_RGBA, (int)dstW, (int)dstH, 1);
 
-			sws_freeContext(sws);
-			av_frame_free(&dst);
-
-			// Cleanup decoder
-			av_packet_free(&pkt);
-			av_frame_free(&frame);
-			avcodec_free_context(&cc);
-			avformat_close_input(&fmt);
+			sws_scale(ctx.sws, ctx.frame->data, ctx.frame->linesize, 0, (int)srcH, ctx.dst->data, ctx.dst->linesize);
 
 			hasAlpha = true; // RGBA output
 			width = dstW;
 			height = dstH;
 
-			if (m_log) m_log->logf(L"%sRenderWithFFmpegFromFile: success, out=%dx%d", m_logTag.Tag(), width, height);
+			m_log->logf(L"%sRenderWithFFmpegFromFile: success, out=%dx%d", m_logTag.Tag(), width, height);
 
 			return out;
 		}
 
 
-		unsigned char* GenerateImage(
+		std::vector<unsigned char> GenerateImage(
 			IN IStream* pStream,
 			IN unsigned int desiredSize,
 			IN unsigned int /*flags*/,
@@ -1588,7 +1511,7 @@ public:
 
 			if (config.returnDebugFFMpegThumbnail)
 			{
-				if (m_log) m_log->logf(L"%sGenerateImage: returning synthetic FFMpeg debug image", m_logTag.Tag());
+				m_log->logf(L"%sGenerateImage: returning synthetic FFMpeg debug image", m_logTag.Tag());
 				return MakeDebugImage(desiredSize, hasAlpha, width, height);
 			}
 
@@ -1601,30 +1524,30 @@ public:
 			std::wstring mediaPath, pngPath;
 			if (!MakeTempFilePair(tempDir, L".tmpvid", mediaPath, pngPath))
 			{
-				if (m_log) m_log->logf(L"%sGenerateImage: MakeTempFilePair failed", m_logTag.Tag());
-				return nullptr;
+				m_log->logf(L"%sGenerateImage: MakeTempFilePair failed", m_logTag.Tag());
+                return {};
 			}
 
 			{
-				if (m_log) m_log->logf(L"%sGenerateImage: Generated files=%s and .png", m_logTag.Tag(), mediaPath.c_str());
+				m_log->logf(L"%sGenerateImage: Generated files=%s and .png", m_logTag.Tag(), mediaPath.c_str());
 			}
 
 			// Stage 1: stream -> temp media file (FFmpeg reads from a local file)
 			if (!WriteStreamToFile(pStream, mediaPath))
 			{
-				if (m_log) m_log->logf(L"%sGenerateImage: WriteStreamToFile failed", m_logTag.Tag());
+				m_log->logf(L"%sGenerateImage: WriteStreamToFile failed", m_logTag.Tag());
 				if (!config.leaveTempFiles)
 				{
 					DeleteFileW(mediaPath.c_str());
 					DeleteFileW(pngPath.c_str());
 				}
-				return nullptr;
+				return {};
 			}
 
 			// Stage 2: FFmpeg decode (primary)
 			const bool useDesiredSize = config.useDesiredSizeHint; // Should we respect desiredSize hint?
 
-			unsigned char* buffer = nullptr;
+			std::vector<unsigned char> buffer;
 
 			if (config.collage4)
 			{
@@ -1637,7 +1560,7 @@ public:
 					height);
 			}
 
-			if (!buffer)
+			if (buffer.empty())
 			{
 				buffer = RenderWithFFmpegFromFile(
 					mediaPath,
@@ -1648,9 +1571,9 @@ public:
 					height);
 			}
 
-			if (buffer)
+			if (!buffer.empty())
 			{
-				if (m_log) m_log->logf(L"%sGenerateImage: FFmpeg decode succeeded", m_logTag.Tag());
+				m_log->logf(L"%sGenerateImage: FFmpeg decode succeeded", m_logTag.Tag());
 				if (!config.leaveTempFiles)
 				{
 					DeleteFileW(mediaPath.c_str());
@@ -1659,14 +1582,14 @@ public:
 				return buffer;
 			}
 
-			if (m_log) m_log->logf(L"%sGenerateImage: FFmpeg decode failed, trying external Thumbnailer", m_logTag.Tag());
+			m_log->logf(L"%sGenerateImage: FFmpeg decode failed, trying external Thumbnailer", m_logTag.Tag());
 
 			// Stage 4: external thumbnailer fallback -> PNG
 			if (!config.thumbPath.empty() && !config.thumbParams.empty())
 			{
 				std::wstring args = ExpandThumbParams(config.thumbParams, mediaPath, pngPath, desiredSize, tempDir);
 
-				if (m_log) m_log->logf(
+				m_log->logf(
 					L"%sThumbnailer: \"%s\" args=%s",
 					m_logTag.Tag(),
 					config.thumbPath.c_str(),
@@ -1676,28 +1599,28 @@ public:
 				DWORD ec = 0;
 				if (RunExternalThumbnailerCapture(config.thumbPath, args, captured, ec))
 				{
-					if (m_log) m_log->logf(L"%sThumbnailer: exit code %ld", m_logTag.Tag(), ec);
+					m_log->logf(L"%sThumbnailer: exit code %ld", m_logTag.Tag(), ec);
 
 					if (!captured.empty())
-						if (m_log) m_log->logf(L"%sThumbnailer output: %s", m_logTag.Tag(), captured.c_str());
+						m_log->logf(L"%sThumbnailer output: %s", m_logTag.Tag(), captured.c_str());
 				}
 				else
 				{
-					if (m_log) m_log->logf(L"%sThumbnailer: failed to launch or capture output", m_logTag.Tag());
+					m_log->logf(L"%sThumbnailer: failed to launch or capture output", m_logTag.Tag());
 				}
 			}
 			else
 			{
-				if (m_log) m_log->logf(L"%sGenerateImage: no Thumbnailer configured", m_logTag.Tag());
+				m_log->logf(L"%sGenerateImage: no Thumbnailer configured", m_logTag.Tag());
 			}
 
 			// Stage 5: load PNG if produced
 			if (FileExists(pngPath))
 			{
 				buffer = LoadPngToRgbaBuffer(pngPath, desiredSize, config.useDesiredSizeHint, hasAlpha, width, height);
-				if (buffer)
+				if (!buffer.empty())
 				{
-					if (m_log) m_log->logf(L"%sGenerateImage: success (external thumbnailer", m_logTag.Tag());
+					m_log->logf(L"%sGenerateImage: success (external thumbnailer", m_logTag.Tag());
 					if (!config.leaveTempFiles)
 					{
 						DeleteFileW(mediaPath.c_str());
@@ -1706,11 +1629,11 @@ public:
 					return buffer;
 				}
 
-				if (m_log) m_log->logf(L"%sGenerateImage: PNG existed but LoadPngToRgbaBuffer failed", m_logTag.Tag());
+				m_log->logf(L"%sGenerateImage: PNG existed but LoadPngToRgbaBuffer failed", m_logTag.Tag());
 			}
 			else
 			{
-				if (m_log) m_log->logf(L"%sGenerateImage: external thumbnailer did not produce PNG", m_logTag.Tag());
+				m_log->logf(L"%sGenerateImage: external thumbnailer did not produce PNG", m_logTag.Tag());
 			}
 
 			if (!config.leaveTempFiles)
@@ -1719,7 +1642,7 @@ public:
 				DeleteFileW(pngPath.c_str());
 			}
 
-			return nullptr;
+			return {};
 		}
 	};
 

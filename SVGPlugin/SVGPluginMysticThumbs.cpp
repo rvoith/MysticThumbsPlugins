@@ -1,4 +1,10 @@
 // SVGPluginMysticThumbs.cpp
+// SVG MysticThumbs Plugin by Voith's CODE
+// https://www.vcode.no
+//
+// Licensed under the MIT License. See LICENSE file in the project root.
+//
+// This project is not affiliated with MysticThumbs or MysticCoder Pty Ltd.
 
 // Avoid the std::max error:
 // error C2589: '(': illegal token on right side of '::'
@@ -75,8 +81,6 @@ static const wchar_t* REG_LEAVE_TEMP = L"LeaveTempFiles";
 static const wchar_t* REG_SWAP_RB = L"SwapRB";
 static const wchar_t* REG_RETURN_DEBUG_SVG_TN = L"ReturnDebugSVGThumbnail";
 static const wchar_t* REG_USE_DESIRED_SIZE_HINT = L"useDesiredSizeHint";
-static const wchar_t* REG_MAX_SVG_DIM = L"maxSvgDim";
-static const wchar_t* REG_MAX_SVG_BYTES = L"maxSvgBytes";
 
 // Subkeys under the plugin root
 static const wchar_t* REG_THUMB_SUBKEY = L"Thumbnailer";
@@ -362,9 +366,9 @@ private:
 
 		IStream* pStream = m_context ? m_context->GetStream() : nullptr;
 		if (!pStream)
-			if (m_log) m_log->logf(L"%sPing: context stream is null", m_logTag.Tag());
+			m_log->logf(L"%sPing: context stream is null", m_logTag.Tag());
 
-		if (m_log) m_log->logf(L"%sPing (SVG): File \"%s\"", m_logTag.Tag(), m_logTag.Name());
+		m_log->logf(L"%sPing (SVG): File \"%s\"", m_logTag.Tag(), m_logTag.Name());
 
 		const unsigned int fallback = 256;
 		bool isQuickView = !!(ping.flags & MysticThumbsPluginPingFlags_QuickView);
@@ -413,7 +417,7 @@ private:
 		ping.height = outH;
 		ping.bitDepth = 32;
 
-		if (m_log) m_log->logf(L"%sPing called, returning %ux%u @ %u bpp (flags=0x%08X)", m_logTag.Tag(), ping.width, ping.height, ping.bitDepth, (unsigned int)ping.flags);
+		m_log->logf(L"%sPing called, returning %ux%u @ %u bpp (flags=0x%08X)", m_logTag.Tag(), ping.width, ping.height, ping.bitDepth, (unsigned int)ping.flags);
 
 		return true;
 	}
@@ -452,7 +456,7 @@ private:
 		size_t fillPos = tagLower.find(L"fill=");
 		if (fillPos == std::wstring::npos)
 		{
-			if (m_log) m_log->logf(L"%sRemoveSvgRootFillAttributeInMemory: no fill= attribute in <svg> tag", m_logTag.Tag());
+			m_log->logf(L"%sRemoveSvgRootFillAttributeInMemory: no fill= attribute in <svg> tag", m_logTag.Tag());
 			return false;
 		}
 
@@ -478,7 +482,7 @@ private:
 
 		if (vLower != L"white")
 		{
-			if (m_log) m_log->logf(L"%sRemoveSvgRootFillAttributeInMemory: fill= exists but is not \"white\"", m_logTag.Tag());
+			m_log->logf(L"%sRemoveSvgRootFillAttributeInMemory: fill= exists but is not \"white\"", m_logTag.Tag());
 			return false;
 		}
 
@@ -495,15 +499,27 @@ private:
 		// Replace in original contents
 		contents.replace(svgPos, tagEnd - svgPos + 1, tag);
 
-		if (m_log) m_log->logf(L"%sRemoveSvgRootFillAttributeInMemory: removed fill=\"white\" from root <svg>", m_logTag.Tag());
+		m_log->logf(L"%sRemoveSvgRootFillAttributeInMemory: removed fill=\"white\" from root <svg>", m_logTag.Tag());
 		return true;
 	}
 
 
+	// TODO: create a helper context to take care of resvg cleanup
+	struct SVGContext {
+		resvg_options* opt{};
+		resvg_render_tree* tree{};
+        // TODO: maybe manage the temp file destruction also? an exercise for the reader :)
+		~SVGContext()
+		{
+			if (tree) resvg_tree_destroy(tree);
+            if(opt) resvg_options_destroy(opt);
+        }
+	};
+
 	// ----------------------------------------------------------------------------
 	// Primary renderer: resvg
 	// ----------------------------------------------------------------------------
-	unsigned char* RenderSvgWithResvgFromFile(
+	std::vector<unsigned char> RenderSvgWithResvgFromFile(
 		const std::wstring& svgPath,
 		unsigned int desiredSize,        // MysticThumbs hint (used only if useDesiredSize == true)
 		bool useDesiredSize,             // if false: ignore desiredSize, return "full sized" (subject to safety cap)
@@ -511,64 +527,61 @@ private:
 		unsigned int& width,
 		unsigned int& height)
 	{
+		SVGContext ctx;
+
 		hasAlpha = false;
 		width = height = 0;
 
 		std::string svgPathUtf8 = WideToUtf8(svgPath);
 		if (svgPathUtf8.empty())
 		{
-			if (m_log) m_log->logf(L"%sRenderSvgWithResvgFromFile: WideToUtf8 failed", m_logTag.Tag());
-			return nullptr;
+			m_log->logf(L"%sRenderSvgWithResvgFromFile: WideToUtf8 failed", m_logTag.Tag());
+			return {};
 		}
 
 		// IMPORTANT: Create resvg_options per call.
 		// Explorer/MysticThumbs may call GenerateImage concurrently; resvg_options is mutable and not thread-safe.
-		resvg_options* opt = resvg_options_create();
-		if (!opt)
+		ctx.opt = resvg_options_create();
+		if (!ctx.opt)
 		{
-			if (m_log) m_log->logf(L"%sRenderSvgWithResvgFromFile: resvg_options_create failed", m_logTag.Tag());
-			return nullptr;
+			m_log->logf(L"%sRenderSvgWithResvgFromFile: resvg_options_create failed", m_logTag.Tag());
+            return {};
 		}
 
 		// Note: loading system fonts can be slow, but is safe here.
-		resvg_options_load_system_fonts(opt);
+		resvg_options_load_system_fonts(ctx.opt);
 
 		// Set resources dir so relative references resolve (images, CSS, etc.)
 		std::wstring dirW = GetDirectoryOfPath(svgPath);
 		std::string dirUtf8 = WideToUtf8(dirW);
 		if (!dirUtf8.empty())
-			resvg_options_set_resources_dir(opt, dirUtf8.c_str());
+			resvg_options_set_resources_dir(ctx.opt, dirUtf8.c_str());
 
-		resvg_render_tree* tree = nullptr;
-		int32_t err = resvg_parse_tree_from_file(svgPathUtf8.c_str(), opt, &tree);
+		int32_t err = resvg_parse_tree_from_file(svgPathUtf8.c_str(), ctx.opt, &ctx.tree);
 
-		resvg_options_destroy(opt);
-
-		if (err != RESVG_OK || !tree)
+		if (err != RESVG_OK || !ctx.tree)
 		{
-			if (m_log) m_log->logf(
+			m_log->logf(
 				L"%sRenderSvgWithResvgFromFile: parse failed, err=%d",
 				m_logTag.Tag(),
 				(int)err);
-			return nullptr;
+            return {};
 		}
 
-		if (resvg_is_image_empty(tree))
+		if (resvg_is_image_empty(ctx.tree))
 		{
-			if (m_log) m_log->logf(L"%sRenderSvgWithResvgFromFile: SVG is empty", m_logTag.Tag());
-			resvg_tree_destroy(tree);
-			return nullptr;
+			m_log->logf(L"%sRenderSvgWithResvgFromFile: SVG is empty", m_logTag.Tag());
+            return {};
 		}
 
-		resvg_size sz = resvg_get_image_size(tree);
+		resvg_size sz = resvg_get_image_size(ctx.tree);
 		const float svgW = sz.width;
 		const float svgH = sz.height;
 
 		if (svgW <= 0.0f || svgH <= 0.0f)
 		{
-			if (m_log) m_log->logf(L"%sRenderSvgWithResvgFromFile: invalid SVG size", m_logTag.Tag());
-			resvg_tree_destroy(tree);
-			return nullptr;
+			m_log->logf(L"%sRenderSvgWithResvgFromFile: invalid SVG size", m_logTag.Tag());
+            return {};
 		}
 
 		// ---- Decide output size + transform ----
@@ -621,47 +634,34 @@ private:
 		// Basic sanity
 		if (w == 0 || h == 0)
 		{
-			if (m_log) m_log->logf(L"%sRenderSvgWithResvgFromFile: invalid output size", m_logTag.Tag());
-			resvg_tree_destroy(tree);
-			return nullptr;
+			m_log->logf(L"%sRenderSvgWithResvgFromFile: invalid output size", m_logTag.Tag());
+            return {};
 		}
 
 		// Overflow-safe stride = w * 4
 		if (w > (SIZE_MAX / 4))
 		{
-			if (m_log) m_log->logf(L"%sRenderSvgWithResvgFromFile: stride overflow", m_logTag.Tag());
-			resvg_tree_destroy(tree);
-			return nullptr;
+			m_log->logf(L"%sRenderSvgWithResvgFromFile: stride overflow", m_logTag.Tag());
+            return {};
 		}
 		const size_t stride = w * 4;
 
 		// Overflow-safe bufSize = stride * h
 		if (h > 0 && stride > (SIZE_MAX / h))
 		{
-			if (m_log) m_log->logf(L"%sRenderSvgWithResvgFromFile: bufSize overflow", m_logTag.Tag());
-			resvg_tree_destroy(tree);
-			return nullptr;
+			m_log->logf(L"%sRenderSvgWithResvgFromFile: bufSize overflow", m_logTag.Tag());
+            return {};
 		}
 		const size_t bufSize = stride * h;
 
-		unsigned char* buffer = (unsigned char*)LocalAlloc(LMEM_FIXED, bufSize);
-		if (!buffer)
-		{
-			if (m_log) m_log->logf(L"%sRenderSvgWithResvgFromFile: LocalAlloc failed", m_logTag.Tag());
-			resvg_tree_destroy(tree);
-			return nullptr;
-		}
-
-		memset(buffer, 0, bufSize);
+		std::vector<unsigned char> buffer(bufSize);
 
 		// Render premultiplied RGBA8888
-		resvg_render(tree, tr, (uint32_t)width, (uint32_t)height, (char*)buffer);
-
-		resvg_tree_destroy(tree);
+		resvg_render(ctx.tree, tr, (uint32_t)width, (uint32_t)height, (char*)buffer.data());
 
 		// If MysticThumbs/Windows interprets pixels as BGRA, swap channels
 		if (config.swapRB)
-			SwapRedBlueInPlace(buffer, width, height);
+			SwapRedBlueInPlace(buffer.data(), width, height);
 
 		hasAlpha = true;
 
@@ -711,13 +711,13 @@ private:
 		fputws(contents.c_str(), f);
 		fclose(f);
 
-		if (m_log) m_log->logf(L"%sNormalizeSvgFileIfConfigured: updated SVG", m_logTag.Tag());
+		m_log->logf(L"%sNormalizeSvgFileIfConfigured: updated SVG", m_logTag.Tag());
 		return true;
 	}
 
 
 	// Existing implementation kept as-is (now a private helper, not an interface method).
-	unsigned char* GenerateImage(
+	std::vector<unsigned char> GenerateImage(
 		IN IStream* pStream,
 		IN unsigned int desiredSize,
 		IN unsigned int /*flags*/,
@@ -728,7 +728,7 @@ private:
 
 		if (config.returnDebugSVGThumbnail)
 		{
-			if (m_log) m_log->logf(L"%sGenerateImage: returning synthetic SVG debug image", m_logTag.Tag());
+			m_log->logf(L"%sGenerateImage: returning synthetic SVG debug image", m_logTag.Tag());
 			return MakeDebugImage(desiredSize, hasAlpha, width, height);
 		}
 
@@ -741,22 +741,22 @@ private:
 		std::wstring svgPath, pngPath;
 		if (!MakeTempFilePair(tempDir, L"svg", svgPath, pngPath))
 		{
-			if (m_log) m_log->logf(L"%sGenerateImage: MakeTempFilePair failed", m_logTag.Tag());
-			return nullptr;
+			m_log->logf(L"%sGenerateImage: MakeTempFilePair failed", m_logTag.Tag());
+			return {};
 		}
 
-		if (m_log) m_log->logf(L"%sGenerateImage: Generated files=%s and .png", m_logTag.Tag(), svgPath.c_str());
+		m_log->logf(L"%sGenerateImage: Generated files=%s and .png", m_logTag.Tag(), svgPath.c_str());
 
 		// Stage 1: stream -> temp SVG
 		if (!WriteStreamToFile(pStream, svgPath))
 		{
-			if (m_log) m_log->logf(L"%sGenerateImage: WriteStreamToFile failed", m_logTag.Tag());
+			m_log->logf(L"%sGenerateImage: WriteStreamToFile failed", m_logTag.Tag());
 			if (!config.leaveTempFiles)
 			{
 				DeleteFileW(svgPath.c_str());
 				DeleteFileW(pngPath.c_str());
 			}
-			return nullptr;
+            return {};
 		}
 
 		// Stage 2: normalization (optional)
@@ -765,7 +765,7 @@ private:
 		// Stage 3: resvg render (primary)
 		const bool useDesiredSize = config.useDesiredSizeHint; // Should we respect desiredSize hint?
 
-		unsigned char* buffer = RenderSvgWithResvgFromFile(
+		auto buffer = RenderSvgWithResvgFromFile(
 			svgPath,
 			desiredSize,
 			useDesiredSize,
@@ -773,9 +773,9 @@ private:
 			width,
 			height);
 
-		if (buffer)
+		if (!buffer.empty())
 		{
-			if (m_log) m_log->logf(L"%sGenerateImage: resvg rendering succeeded", m_logTag.Tag());
+			m_log->logf(L"%sGenerateImage: resvg rendering succeeded", m_logTag.Tag());
 			if (!config.leaveTempFiles)
 			{
 				DeleteFileW(svgPath.c_str());
@@ -784,7 +784,7 @@ private:
 			return buffer;
 		}
 
-		if (m_log) m_log->logf(L"%sGenerateImage: resvg rendering failed, trying external Thumbnailer", m_logTag.Tag());
+		m_log->logf(L"%sGenerateImage: resvg rendering failed, trying external Thumbnailer", m_logTag.Tag());
 
 		// Stage 4: external thumbnailer fallback -> PNG
 		if (!config.thumbPath.empty() && !config.thumbParams.empty())
@@ -796,25 +796,25 @@ private:
 			if (RunExternalThumbnailerCapture(config.thumbPath, args, captured, ec))
 			{
 				if (!captured.empty())
-					if (m_log) m_log->logf(L"%sThumbnailer output: exit code %ld", m_logTag.Tag(), ec);
+					m_log->logf(L"%sThumbnailer output: exit code %ld", m_logTag.Tag(), ec);
 			}
 			else
 			{
-				if (m_log) m_log->logf(L"%sThumbnailer: failed to launch or capture output", m_logTag.Tag());
+				m_log->logf(L"%sThumbnailer: failed to launch or capture output", m_logTag.Tag());
 			}
 		}
 		else
 		{
-			if (m_log) m_log->logf(L"%sGenerateImage: no Thumbnailer configured", m_logTag.Tag());
+			m_log->logf(L"%sGenerateImage: no Thumbnailer configured", m_logTag.Tag());
 		}
 
 		// Stage 5: load PNG if produced
 		if (FileExists(pngPath))
 		{
 			buffer = LoadPngToRgbaBuffer(pngPath, desiredSize, config.useDesiredSizeHint, hasAlpha, width, height);
-			if (buffer)
+			if (!buffer.empty())
 			{
-				if (m_log) m_log->logf(L"%sGenerateImage: success (external thumbnailer)", m_logTag.Tag());
+				m_log->logf(L"%sGenerateImage: success (external thumbnailer)", m_logTag.Tag());
 				if (!config.leaveTempFiles)
 				{
 					DeleteFileW(svgPath.c_str());
@@ -823,11 +823,11 @@ private:
 				return buffer;
 			}
 
-			if (m_log) m_log->logf(L"%sGenerateImage: PNG existed but LoadPngToRgbaBuffer failed", m_logTag.Tag());
+			m_log->logf(L"%sGenerateImage: PNG existed but LoadPngToRgbaBuffer failed", m_logTag.Tag());
 		}
 		else
 		{
-			if (m_log) m_log->logf(L"%sGenerateImage: external thumbnailer did not produce PNG", m_logTag.Tag());
+			m_log->logf(L"%sGenerateImage: external thumbnailer did not produce PNG", m_logTag.Tag());
 		}
 
 		if (!config.leaveTempFiles)
@@ -836,7 +836,7 @@ private:
 			DeleteFileW(pngPath.c_str());
 		}
 
-		return nullptr;
+		return {};
 	}
 
 	HRESULT Generate(_Inout_ MysticThumbsPluginGenerateParams& params,
@@ -853,7 +853,7 @@ private:
 
 		const unsigned int desiredSize = std::max(1u, std::min(params.desiredWidth, params.desiredHeight));
 
-		if (m_log) m_log->logf(L"%sGenerate: start: %ux%u", m_logTag.Tag(), (unsigned)params.desiredWidth, (unsigned)params.desiredHeight);
+		m_log->logf(L"%sGenerate: start: %ux%u", m_logTag.Tag(), (unsigned)params.desiredWidth, (unsigned)params.desiredHeight);
 
 		// Ensure stream is at head
 		LARGE_INTEGER zero{};
@@ -862,72 +862,57 @@ private:
 		bool hasAlpha = false;
 		unsigned int w = 0, h = 0;
 
-		unsigned char* pixels = GenerateImage(
+		std::vector<unsigned char> pixels = GenerateImage(
 			pStream,
 			desiredSize,
 			(unsigned int)params.flags,
 			hasAlpha,
 			w, h);
 
-		if (!pixels || w == 0 || h == 0)
+		if (pixels.empty() || w == 0 || h == 0)
 			return E_FAIL;
 
 		// Ensure output ordering is BGRA for GUID_WICPixelFormat32bppPBGRA
 		if (!config.swapRB) // buffer is RGBA -> convert to BGRA for WIC PBGRA
-			SwapRedBlueInPlace(pixels, w, h);
+			SwapRedBlueInPlace(pixels.data(), w, h);
 
 		const UINT srcStride = w * 4;
 
-		IWICImagingFactory* factory = nullptr;
-		HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
-			IID_PPV_ARGS(&factory));
-		if (FAILED(hr)) {
-			LocalFree(pixels);
+		HRESULT hr;
+
+		CComPtr<IWICImagingFactory> factory;
+		if (FAILED(hr = factory.CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER))) {
 			return hr;
 		}
 
-		IWICBitmap* bmp = nullptr;
-		hr = factory->CreateBitmap(w, h, GUID_WICPixelFormat32bppPBGRA,
-			WICBitmapCacheOnLoad, &bmp);
-		factory->Release();
-
-		if (FAILED(hr)) {
-			LocalFree(pixels);
+		CComPtr<IWICBitmap> bmp;
+		if (FAILED(hr = factory->CreateBitmap(w, h, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnLoad, &bmp))) {
 			return hr;
 		}
 
 		WICRect rc{ 0, 0, (INT)w, (INT)h };
-		IWICBitmapLock* lock = nullptr;
-		hr = bmp->Lock(&rc, WICBitmapLockWrite, &lock);
-		if (FAILED(hr)) {
-			LocalFree(pixels);
-			bmp->Release();
+		CComPtr<IWICBitmapLock> lock;
+		if (FAILED(hr = bmp->Lock(&rc, WICBitmapLockWrite, &lock))) {
 			return hr;
 		}
 
 		UINT dstStride = 0, dstSize = 0;
-		BYTE* dst = nullptr;
-		hr = lock->GetStride(&dstStride);
-		if (SUCCEEDED(hr)) hr = lock->GetDataPointer(&dstSize, &dst);
+		BYTE* dst{};
+		if (SUCCEEDED(hr = lock->GetStride(&dstStride)))
+			hr = lock->GetDataPointer(&dstSize, &dst);
 
-		if (FAILED(hr) || !dst) {
-			lock->Release();
-			LocalFree(pixels);
-			bmp->Release();
-			return FAILED(hr) ? hr : E_FAIL;
+		if (FAILED(hr)) {
+			return FAILED(hr) ? hr : E_FAIL; // TODO: shouldn't this just be hr?
 		}
 
 		const UINT copyStride = (dstStride < srcStride) ? dstStride : srcStride;
 		for (unsigned int y = 0; y < h; ++y)
-			memcpy(dst + (size_t)y * dstStride, pixels + (size_t)y * srcStride, copyStride);
-
-		lock->Release();
-		LocalFree(pixels);
+			memcpy(dst + (size_t)y * dstStride, pixels.data() + (size_t)y * srcStride, copyStride);
 
 		if (hasAlpha)
 			params.flags |= MT_HasAlpha;
 
-		*lplpOutputImage = bmp; // refcount passed to caller
+		*lplpOutputImage = bmp.Detach(); // refcount passed to caller
 		return S_OK;
 	}
 

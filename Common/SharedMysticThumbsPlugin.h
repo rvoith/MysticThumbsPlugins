@@ -338,6 +338,7 @@ static inline T GetUInt(HWND hDlg, const int nIDDlgItem, const T defValue)
 {
 	BOOL ok = FALSE;
 	UINT v = GetDlgItemInt(hDlg, nIDDlgItem, &ok, (BOOL)std::is_signed<T>());
+	ATLASSERT(ok && "Dialog GetUInt failed. Using it for a checkbox?");
 	return ok ? static_cast<T>(v) : defValue;
 }
 
@@ -369,7 +370,7 @@ static inline bool MakeTempFilePair(const std::wstring& tempDir, const std::wstr
 	return true;
 }
 
-static unsigned char* LoadPngToRgbaBuffer(const std::wstring& pngPath,
+static std::vector<unsigned char> LoadPngToRgbaBuffer(const std::wstring& pngPath,
 	unsigned int desiredSize,
 	bool useDesiredSizeHint,
 	bool& hasAlpha,
@@ -380,30 +381,22 @@ static unsigned char* LoadPngToRgbaBuffer(const std::wstring& pngPath,
 	width = height = 0;
 
 	if (!FileExists(pngPath))
-		return nullptr;
+		return {};
 
-	IWICImagingFactory* factory = nullptr;
-	HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
-		IID_PPV_ARGS(&factory));
-	if (FAILED(hr) || !factory)
-		return nullptr;
+	HRESULT hr;
 
-	IWICBitmapDecoder* decoder = nullptr;
-	hr = factory->CreateDecoderFromFilename(pngPath.c_str(), nullptr, GENERIC_READ,
-		WICDecodeMetadataCacheOnLoad, &decoder);
-	if (FAILED(hr) || !decoder)
-	{
-		factory->Release();
-		return nullptr;
-	}
+	CComPtr<IWICImagingFactory> factory;
+	if (FAILED(factory.CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER)))
+        return {};
 
-	IWICBitmapFrameDecode* frame = nullptr;
-	hr = decoder->GetFrame(0, &frame);
-	if (FAILED(hr) || !frame)
-	{
-		decoder->Release();
-		factory->Release();
-		return nullptr;
+	CComPtr<IWICBitmapDecoder> decoder;
+	hr = factory->CreateDecoderFromFilename(pngPath.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad, &decoder);
+	if (FAILED(hr))
+        return {};
+
+	CComPtr<IWICBitmapFrameDecode> frame;
+	if(FAILED(hr = decoder->GetFrame(0, &frame))) {
+        return {};
 	}
 
 	UINT w = 0, h = 0;
@@ -421,16 +414,14 @@ static unsigned char* LoadPngToRgbaBuffer(const std::wstring& pngPath,
 		targetH = desiredSize;
 	}
 
-	IWICBitmapSource* source = frame;
-	IWICBitmapScaler* scaler = nullptr;
+	CComPtr<IWICBitmapSource> source;
 
 	if (targetW != w || targetH != h)
 	{
-		hr = factory->CreateBitmapScaler(&scaler);
-		if (SUCCEEDED(hr) && scaler)
+        CComPtr<IWICBitmapScaler> scaler;
+        if(SUCCEEDED(factory->CreateBitmapScaler(&scaler)))
 		{
-			hr = scaler->Initialize(frame, targetW, targetH, WICBitmapInterpolationModeFant);
-			if (SUCCEEDED(hr))
+			if (SUCCEEDED(hr = scaler->Initialize(frame, targetW, targetH, WICBitmapInterpolationModeFant)))
 			{
 				source = scaler;
 				w = targetW;
@@ -439,36 +430,18 @@ static unsigned char* LoadPngToRgbaBuffer(const std::wstring& pngPath,
 			else
 			{
 				// If scaling fails, fall back to original size rather than failing completely
-				scaler->Release();
-				scaler = nullptr;
 				source = frame;
 				frame->GetSize(&w, &h);
 			}
 		}
 	}
 
-	IWICFormatConverter* converter = nullptr;
-	hr = factory->CreateFormatConverter(&converter);
-	if (FAILED(hr) || !converter)
-	{
-		if (scaler) scaler->Release();
-		frame->Release();
-		decoder->Release();
-		factory->Release();
-		return nullptr;
-	}
+	CComPtr<IWICFormatConverter> converter;
+	if (FAILED(hr = factory->CreateFormatConverter(&converter)))
+        return {};
 
-	hr = converter->Initialize(source, GUID_WICPixelFormat32bppRGBA,
-		WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeCustom);
-	if (FAILED(hr))
-	{
-		converter->Release();
-		if (scaler) scaler->Release();
-		frame->Release();
-		decoder->Release();
-		factory->Release();
-		return nullptr;
-	}
+	if (FAILED(hr = converter->Initialize(source, GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeCustom)))
+		return {};
 
 	width = w;
 	height = h;
@@ -476,30 +449,10 @@ static unsigned char* LoadPngToRgbaBuffer(const std::wstring& pngPath,
 	const size_t stride = (size_t)width * 4;
 	const size_t bufSize = stride * (size_t)height;
 
-	unsigned char* buffer = (unsigned char*)LocalAlloc(LMEM_FIXED, bufSize);
-	if (!buffer)
-	{
-		converter->Release();
-		if (scaler) scaler->Release();
-		frame->Release();
-		decoder->Release();
-		factory->Release();
-		return nullptr;
-	}
+	std::vector<unsigned char> buffer(bufSize); // failure to allocate will except out
 
-	hr = converter->CopyPixels(nullptr, (UINT)stride, (UINT)bufSize, buffer);
-
-	converter->Release();
-	if (scaler) scaler->Release();
-	frame->Release();
-	decoder->Release();
-	factory->Release();
-
-	if (FAILED(hr))
-	{
-		LocalFree(buffer);
-		return nullptr;
-	}
+	if (FAILED(converter->CopyPixels(nullptr, (UINT)stride, (UINT)bufSize, buffer.data())))
+        return {};
 
 	hasAlpha = true;
 	return buffer;
@@ -768,7 +721,7 @@ static inline bool WriteStreamToFile(IStream* pStream, const std::wstring& path)
 // ----------------------------------------------------------------------------
 // Optional: synthetic debug image (useful to prove GenerateImage is called)
 // ----------------------------------------------------------------------------
-static unsigned char* MakeDebugImage(unsigned int desiredSize,
+static std::vector<unsigned char> MakeDebugImage(unsigned int desiredSize,
 	bool& hasAlpha,
 	unsigned int& width,
 	unsigned int& height)
@@ -780,14 +733,15 @@ static unsigned char* MakeDebugImage(unsigned int desiredSize,
 	const size_t stride = (size_t)width * 4;
 	const size_t size = stride * (size_t)height;
 
-	unsigned char* buf = (unsigned char*)LocalAlloc(LMEM_FIXED, size);
-	if (!buf) return nullptr;
+	std::vector<unsigned char> buf(size);
 
 	for (unsigned int y = 0; y < height; ++y)
 	{
+		const auto yPtr = buf.data() + (y * stride);
+
 		for (unsigned int x = 0; x < width; ++x)
 		{
-			unsigned char* p = buf + (y * stride) + (x * 4);
+			unsigned char* p = yPtr + (x * 4);
 			bool diag = (x == y) || (x + 1 == y) || (x == y + 1);
 
 			if (diag)

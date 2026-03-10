@@ -4,11 +4,21 @@
 
 Plugin development for MysticThumbs - The SVG-, FFMpeg and DLL plugins
 
-Last updated: February 26th, 2026
+Last updated: March 9th, 2026
 
 ![SVGplugin sample](Media/vcsvgplugin-sample.jpg) ![FFMpegplugin sample](Media/vcffmpegplugin-sample.jpg) ![DLLPlugin sample](Media/vcdllplugin-sample.jpg)
 
-*Examples of SVG, FFMPeg and DLL thumbnails!*
+*Examples of SVG, FFMpeg and DLL thumbnails!*
+
+Interested in the background on how I got interested in developing plugins for MysticThumbs? Head over to my blog on bobsplace.no and  [Want beautiful thumbnails in Windows? How to write your own plugins for MysticThumbs](https://www.bobsplace.no/how-to-write-mysticthumbs-plugins/)
+
+## License
+
+This project is licensed under the MIT License.
+
+See the `LICENSE` file for details.
+
+Third-party licenses for dependencies such as FFmpeg and resvg are provided in the `ThirdPartyLicenses` directory.
 
 # About MysticThumbs
 
@@ -79,6 +89,34 @@ The ExamplePlugin-project example defines the architectural expectations:
 The ExamplePlugin-project should be regarded as the "best practices" for implementing your own plugins. Also note that the ExamplePlugin-project contain the main interface header file, the `MysticThumbsPlugin.h`.
 
 These plugins in this repo are written to closely follow the philosophy of ExamplePlugin.
+
+## An automatic way to install resvg and ffmpeg toolkits
+
+The upcoming chapters and sections in this documentation, will explain in deep detail how to install the `resvg`-toolkit needed by the SVGPlugin, and the `ffmpeg`-toolkit needed by the FFMpegPlugin. 
+
+But there is an easier way! In the root of the repo, you will find two files; `install_resvg_and_ffmpeg.cmd` and `install_resvg_and_ffmpeg.ps1`. The .cmd file kicks off the Powershell script .ps1 file with correct settings.
+
+1. Open a *Developer Command Prompt for VS2022* as administrator. This is because the .ps1 file needs access to the Visual Studio 2022 compiler. 
+
+2. Launch the `install_resvg_and_ffmpeg.cmd`. This brings up this dialog box:
+
+   ![User interface of install_resvg_and_ffmpeg](Media/inst_toolkits_01.jpg)
+   
+3. The setup script will do the following:
+   1. Use the current directory where you have cloned the repo. In the screen shot above, the local repo is stored in `D:\git\MysticThumbsPlugins`. 
+   2. Create an `External`-sub directory and download and build resvg- and ffmpeg locally there. 
+   3. Create a local Visual Studio props file named `MysticThumbs.ExternalDeps.props`  which will point to the External-directories. 
+   4. Inject these directories into your SVG- and FFMpeg .vcxproj files and thus make them ready for your to build.
+   5. Automatically copy the ffmpeg-generated runtime DLL files to their correct MysticThumbs directories
+   
+3. Click "Start Setup" to kick of a somewhat lengthy download, installation and compilation sequence of both resvg and ffmpeg. It all cooks down to your network speed and computer power :-)
+   Note that an ordinary resvg and ffmpeg install will occupy approximately 1 GB of disk space.
+
+4. The installer is finished, you will a finishing dialog box like this:
+   ![User interface of finished install_resvg_and_ffmpeg](Media/inst_toolkits_02.jpg)
+   You can see all the details in the generated `install_resvg_and_ffmpeg.log`. 
+
+When finished, you have everything in place and ready to open up SVGPlugin- or FFMpegPlugin projects and build away! 
 
 # DLL Plugin
 
@@ -201,11 +239,11 @@ One thing to have clear already now, is that MysticThumbs by default do have sup
 
 The plugin-architecture of MysticThumbs was first and foremost designed to allow developers to create plugins rendering *unsupported* or *new* file formats in MysticThumbs. The SVG plugin project will *replace* the existing SVG-rendering of the *Scalable Vector Graphics*-format. Below you see how that looks in MysticThumbs (choose format from the drop-down list of formats):
 
-![MysticThumbs showing the Scalable Vector Graphics format](D:\Data\Dropbox\Source\VS20xx\Projects\MysticThumbsPluginMedia/mt_01.jpg)
+![MysticThumbs showing the Scalable Vector Graphics format](Media/mt_01.jpg)
 
 In the screenshot above you see how the .svg file extension is handled by the Scalable Vector Graphics-format. Clicking on the file extension drop-down list reveal that this format also handles the compressed .svgz files:
 
-![The handled file extensions of a format](D:\Data\Dropbox\Source\VS20xx\Projects\MysticThumbsPluginMedia/mt_03.jpg)
+![The handled file extensions of a format](Media/mt_03.jpg)
 
 Note the eclipsis (...) at the bottom! This is where you can add more file extensions to a format, or - in our case - remove the extensions from the Scalable Vector Graphics-format. 
 
@@ -246,6 +284,7 @@ resvg is built as a fully static MSVC-compatible library:
     -   MSVC v143
     -   Windows 10/11 SDK
     -   Visual Studio 2026 should also work!
+-   Git for Windows (resvg needs to be cloned)
 -   x64 Native Tools Command Prompt for VS 2022 (these command prompts installs with VS2022)
 -   x86 Native Tools Command Prompt for VS 2022
 
@@ -441,41 +480,9 @@ Highlights from SVG plugin's own settings:
 
 * **UseDesiredSizeHint**. Controls whether the plugin respects the `desiredSize` hint provided by MysticThumbs.
   0 = Ignore the size hint and render using internal scaling logic (default)
-  1 = espect the `desiredSize` hint when rendering thumbnails
-
-* **MaxSvgDim**. Defines a hard upper limit for the rendered SVG width or height, in pixels.
-  Any positive integer = Maximum allowed SVG dimension
-  0 = No explicit dimension limit (not recommended)
-  This setting caps the maximum width *or* height that an SVG may be rendered at, regardless of its intrinsic size or the requested thumbnail size.
-
-  It protects against SVG files with extremely large viewboxes or pathological dimensions that could otherwise lead to excessive rendering cost or memory allocation.
-
-  If the computed render size exceeds this value, rendering is aborted and the plugin falls back to the external thumbnailer (if configured).
-
-  Default value is 4096
-
-* **MaxSvgBytes**. Defines a maximum allowed memory consumption for a single SVG render operation.
-  Positive integer = Maximum allowed bytes allocated for rendering
-  0 = No memory limit (not recommended)
-  This setting enforces an absolute cap on the number of bytes the plugin is allowed to allocate for rendering an SVG thumbnail.
-
-  It acts as a final safety guard against:
-
-  - malicious SVG files,
-  - accidental memory blowups,
-  - extreme scaling factors.
-
-  If the estimated memory usage (`width × height × 4 bytes`) exceeds this value, the internal renderer is skipped and the plugin attempts to use the external thumbnailer instead.
-
-  Default value is 256 * 1024 * 1024 
+  1 = expect the `desiredSize` hint when rendering thumbnails
 
   
-
-An important note regarding MaxSvgDim and MaxSvgBytes: MysticThumbs itself also has similar protection settings.
-
-![MysticThumbs own protection settings](Media/mt_14.jpg)
-
-Keep the defaults and you should be pretty safe, or turn off the settings in the plugin and activate them in MysticThumbs itself as shown above.
 
 The SVG plugin contain some extra keys too, `Normalize` and `Thumbnailer`. First up is the Normalize.
 
@@ -545,7 +552,7 @@ Windows struggles with:
 
 The FFMpeg plugin do not use ffmpeg staticly The plugin uses:
 
-- FFmpeg DLLs
+- FFMpegDLLs
 
 - Built via vcpkg
 
@@ -555,9 +562,9 @@ As you soon will see, the ffmpeg library and its dlls are build via the vcpkg-pa
 
 ### LICENSE
 
-*This product includes FFmpeg libraries (https://ffmpeg.org) licensed under the GNU Lesser General Public License v2.1 (LGPLv2.1).*
+*This product includes FFMpeg libraries (https://ffmpeg.org) licensed under the GNU Lesser General Public License v2.1 (LGPLv2.1).*
 
-The FFmpeg libraries are dynamically linked and distributed as separate DLL files. In accordance with the LGPL, users are permitted to replace the included FFmpeg DLLs with their own compatible builds.
+The FFMpeg libraries are dynamically linked and distributed as separate DLL files. In accordance with the LGPL, users are permitted to replace the included FFMpeg DLLs with their own compatible builds.
 
 Please see all relevant license files in the `.\ThirdPartyLicenses` directory.
 
@@ -583,7 +590,7 @@ vcpkg (https://vcpkg.io/en/) is a package manager making it relatively easy to i
     bootstrap-vcpkg.bat
     vcpkg integrate install
 
-### 2. Install FFmpeg with dav1d
+### 2. Install FFMpeg with dav1d
 
 This step build the ffmpeg library and dlls according to the specification. 
 
@@ -632,6 +639,17 @@ MysticThumbs has a smart way of separating the 32- and 64-bit DLLs. By having a 
 ![File Explorer shows MysticThumbs Plugins 64 content](Media/mt_16.jpg)
 
 Here you see three .mtp plugins alongside the 64-bit dlls from ffmpeg project that we created previously. I have highlighted the .mtp files yellow, and all the ffmpeg dlls green.
+
+Here is a list of the FFMpeg DLL file names:
+
+avutil-59.dll
+swscale-8.dll
+swresample-5.dll
+avcodec-61.dll
+avformat-61.dll
+avfilter-10.dll
+avdevice-61.dll
+dav1d.dll
 
 ### FFMpeg Plugin Registry Configuration
 
@@ -682,40 +700,6 @@ Highlights from FFMPEG plugin's own settings:
   0 = Ignore the size hint and render using internal scaling logic (default)
   1 = espect the `desiredSize` hint when rendering thumbnails
 
-* **MaxFFMpegDim**. Defines a hard upper limit for the rendered FFMpeg-thumbnail width or height, in pixels.
-  Any positive integer = Maximum allowed thumbnail dimension
-  0 = No explicit dimension limit (not recommended)
-  This setting caps the maximum width *or* height that a thumbnail may be rendered at, regardless of its intrinsic size or the requested thumbnail size.
-
-  It protects against thumbnail files with extremely large dimensions that could otherwise lead to excessive rendering cost or memory allocation.
-
-  If the computed render size exceeds this value, rendering is aborted and the plugin falls back to the external thumbnailer (if configured).
-
-  Default value is 4096
-
-* **MaxFFMpegBytes**. Defines a maximum allowed memory consumption for a single ffmpeg-render operation.
-  Positive integer = Maximum allowed bytes allocated for rendering
-  0 = No memory limit (not recommended)
-  This setting enforces an absolute cap on the number of bytes the plugin is allowed to allocate for rendering a thumbnail.
-
-  It acts as a final safety guard against:
-
-  - (too) huge files,
-  - accidental memory blowups,
-  - extreme scaling factors.
-
-  If the estimated memory usage (`width × height × 4 bytes`) exceeds this value, the internal renderer is skipped and the plugin attempts to use the external thumbnailer instead.
-
-  Default value is 256 * 1024 * 1024 
-
-  
-
-An important note regarding MaxFFMpegDim and MaxFFMpegBytes: MysticThumbs itself also has similar protection settings.
-
-![MysticThumbs own protection settings](Media/mt_14.jpg)
-
-Keep the defaults and you should be pretty safe, or turn off the settings in the plugin and activate them in MysticThumbs itself as shown above.
-
 The FFMpeg plugin contain the `Thumbnailer` subkey too: 
 
 #### Thumbnailer
@@ -751,7 +735,7 @@ This section defines an **external fallback thumbnail renderer**. It is used onl
 
 ### Important FFMpeg Design Notes
 
-- Uses FFmpeg decoding pipeline
+- Uses FFMpeg decoding pipeline
 
 - Extracts representative frame
 
@@ -920,14 +904,6 @@ Restart Explorer if needed.
 
 # Advanced Tips
 
-## Never allocate unbounded memory
-
-Guard with:
-
-width \* height \* 4
-
-Compare to MaxSvgBytes.
-
 ## Never trust file contents
 
 SVG may:
@@ -942,7 +918,7 @@ Always fail cleanly.
 
 ## Use synthetic debug thumbnails
 
-Return bright magenta test bitmap to verify:
+Return some simple test bitmap to verify:
 
 • Plugin loaded
 

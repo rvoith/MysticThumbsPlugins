@@ -1,4 +1,10 @@
 // DLLPluginMysticThumbs.cpp
+// DLL MysticThumbs Plugin by Voith's CODE
+// https://www.vcode.no
+//
+// Licensed under the MIT License. See LICENSE file in the project root.
+//
+// This project is not affiliated with MysticThumbs or MysticCoder Pty Ltd.
 
 // Avoid trouble with std::min and std::max
 #define NOMINMAX
@@ -43,7 +49,7 @@ static const wchar_t* REG_PLATE_OPACITY = L"PlateOpacity";   // DWORD 0..100
 static const wchar_t* REG_PLATE_OPAQUE = L"PlateOpaque";    // DWORD 0/1
 static const wchar_t* REG_LABEL_SCALE = L"LabelScalePct";  // DWORD e.g. 75 means 75%
 
-// Defaults
+// Default semi-HTML template for the label on the plaque
 static const wchar_t* DEFAULT_TEMPLATE =
 L"<center>$(DllFileType)</center>\r\n"
 L"<center><strong>$(DLLFileVersionAsText)</strong></center>\r\n"
@@ -379,8 +385,6 @@ static bool IsFileAuthenticodeSigned(const std::wstring& path)
 
 	return status == ERROR_SUCCESS;
 }
-
-
 
 
 // -----------------------------------------------------------------------------
@@ -1442,7 +1446,7 @@ private:
 			}
 		}
 
-		void Save(HWND hDlg)
+		void Save(HWND hDlg) const
 		{
 			ATLASSUME(context);
 
@@ -1452,16 +1456,10 @@ private:
 
             CRegKeyHelper<false> root(hRoot);
 
-			// Need to reflect here
-			templ = GetText(hDlg, IDC_DLL_TEMPLATE_EDIT);
-            plateOpacity = GetUInt(hDlg, IDC_DLL_PLATE_OPACITY_EDIT, plateOpacity);
-            plateOpaque = !!GetUInt(hDlg, IDC_DLL_PLATE_OPAQUE, plateOpaque);
-            labelScalePct = GetUInt(hDlg, IDC_DLL_LABEL_SCALE_EDIT, labelScalePct);
-
-			root.SetStringValue(REG_TEMPLATE, templ.c_str());
-			root.SetDWORDValue(REG_PLATE_OPACITY, plateOpacity);
-			root.SetDWORDValue(REG_PLATE_OPAQUE, plateOpaque ? 1UL : 0UL);
-			root.SetDWORDValue(REG_LABEL_SCALE, labelScalePct);
+			root.SetStringValue(REG_TEMPLATE, GetText(hDlg, IDC_DLL_TEMPLATE_EDIT).c_str());
+			root.SetDWORDValue(REG_PLATE_OPACITY, GetUInt(hDlg, IDC_DLL_PLATE_OPACITY_EDIT, plateOpacity));
+			root.SetDWORDValue(REG_PLATE_OPAQUE, GetCheck(hDlg, IDC_DLL_PLATE_OPAQUE));
+			root.SetDWORDValue(REG_LABEL_SCALE, GetUInt(hDlg, IDC_DLL_LABEL_SCALE_EDIT, labelScalePct));
 		}
 	} config;
 
@@ -2196,4 +2194,4 @@ DLLPLUGIN_API BOOL APIENTRY DllMain(HINSTANCE hModule, DWORD reason, void*)
 	if (reason == DLL_PROCESS_ATTACH)
 		g_hModule = hModule;
 	return TRUE;
-}
+} 
