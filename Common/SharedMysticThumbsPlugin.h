@@ -808,7 +808,7 @@ public:
 
 	// Update using IStream name (best-effort).
 	// If stream has no name, the tag will become empty and crc/name will reset to 0/empty.
-	void UpdateFromStream(_In_opt_ IStream* stream, _In_ unsigned int desiredSize)
+	void UpdateFromStream(_In_opt_ IStream* stream, _In_opt_ unsigned int desiredSize = 0)
 	{
 		m_tag.clear();
 
@@ -828,7 +828,7 @@ public:
 	}
 
 	// Optional: update directly from a known name/path (useful if a plugin has a path already).
-	void UpdateFromName(_In_ const std::wstring& name, _In_ unsigned int desiredSize)
+	void UpdateFromName(_In_ const std::wstring& name, _In_opt_ unsigned int desiredSize = 0)
 	{
 		m_tag.clear();
 

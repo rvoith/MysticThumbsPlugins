@@ -291,11 +291,9 @@ public:
 
 		virtual bool Ping(_Inout_ MysticThumbsPluginPing& ping) override
 		{
-
 			config.Load();			
 
-			const unsigned int pingSizeHint = (ping.requestedWidth && ping.requestedHeight) ? std::max(1u, std::min(ping.requestedWidth, ping.requestedHeight)) : 0u;
-			m_logTag.UpdateFromStream(m_context->GetStream(), pingSizeHint);
+			m_logTag.UpdateFromStream(m_context->GetStream());
 
 			IStream* pStream = m_context ? m_context->GetStream() : nullptr;
 			if (!pStream)
@@ -378,7 +376,7 @@ public:
 			{
 				unsigned int fallback = 256;
 				if (ping.requestedWidth && ping.requestedHeight)
-					fallback = std::max(1u, std::min(ping.requestedWidth, ping.requestedHeight));
+					fallback = std::max(1u, std::max(ping.requestedWidth, ping.requestedHeight));
 				w = h = fallback;
 			}
 
@@ -697,6 +695,7 @@ public:
 			return true;
 		}
 
+#if 0 // unused
 		bool ScaleFrameToRgbaLetterboxed(
 			AVFrame* frame,
 			unsigned char* dstTile, int tileW, int tileH, int tileStrideBytes,
@@ -752,6 +751,7 @@ public:
 
 			return true;
 		}
+#endif
 
 		bool ScaleFrameToRgbaLetterboxedAutoBg(
 			AVFrame* frame,
@@ -821,17 +821,18 @@ public:
 
 			IStream* pStream = m_context->GetStream(); // this is guaranteed non-null
 
-			config.context = m_context;
-			config.Load();
+			// should not be needed since Ping has already been called and this instance is in a valid state
+			//config.context = m_context;
+			//config.Load();
 
-            //const unsigned int desiredSize = std::max(1u, std::min(params.desiredWidth, params.desiredHeight));
+			m_log->logf(L"%sGenerate: start: %ux%u", m_logTag.Tag(),
+						(unsigned)this->config.context->GetPing()->width,
+						(unsigned)this->config.context->GetPing()->height);
 
 			// As per the header docs, render the actual image size for proper results. MysticThumbs will take care of the rest.
 			const unsigned int desiredSize = std::max(
 				this->config.context->GetPing()->width,
 				this->config.context->GetPing()->height);
-
-			m_log->logf(L"%sGenerate: start: %ux%u", m_logTag.Tag(), (unsigned)params.desiredWidth, (unsigned)params.desiredHeight);
 
 			bool hasAlpha = false;
 			unsigned int w = 0, h = 0;
