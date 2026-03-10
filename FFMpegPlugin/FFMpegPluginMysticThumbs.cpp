@@ -852,7 +852,7 @@ public:
 
 			HRESULT hr;
 			CComPtr<IWICImagingFactory> factory;
-			if (FAILED(hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))))
+			if (FAILED(hr = factory.CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER)))
 				return E_FAIL;
 
 			const UINT stride = (UINT)(w * 4);
