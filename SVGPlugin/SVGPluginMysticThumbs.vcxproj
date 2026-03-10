@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version='1.0' encoding='utf-8'?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build" ToolsVersion="15.0">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -19,111 +19,83 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{AFF0EDF8-4F68-4F38-9AA4-150DCD3E0525}</ProjectGuid>
+    <ProjectGuid>{C3F6E9A3-6CAF-4A7C-BEAC-333333333333}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>SVGPluginMysticThumbs</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir>
-  </PropertyGroup>
+  <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir></PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <CharacterSet>Unicode</CharacterSet>
     <PlatformToolset>v143</PlatformToolset>
-    <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir>
-    <IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir>
-    <TargetName>VCSVGPlugin$(PlatformArchitecture)</TargetName>
-  </PropertyGroup>
+  <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir><IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir><TargetName>VCSVGPlugin$(PlatformArchitecture)</TargetName></PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <CharacterSet>Unicode</CharacterSet>
     <PlatformToolset>v143</PlatformToolset>
-    <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir>
-    <IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir>
-    <TargetName>VCSVGPlugin$(PlatformArchitecture)</TargetName>
-  </PropertyGroup>
+  <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir><IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir><TargetName>VCSVGPlugin$(PlatformArchitecture)</TargetName></PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <CharacterSet>Unicode</CharacterSet>
     <PlatformToolset>v143</PlatformToolset>
-    <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir>
-    <IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir>
-    <TargetName>VCSVGPlugin$(PlatformArchitecture)</TargetName>
-  </PropertyGroup>
+  <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir><IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir><TargetName>VCSVGPlugin$(PlatformArchitecture)</TargetName></PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <CharacterSet>Unicode</CharacterSet>
     <PlatformToolset>v143</PlatformToolset>
-    <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir>
-    <IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir>
-    <TargetName>VCSVGPlugin$(PlatformArchitecture)</TargetName>
-  </PropertyGroup>
+  <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir><IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir><TargetName>VCSVGPlugin$(PlatformArchitecture)</TargetName></PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="..\MysticThumbs.ExternalDeps.props" Condition="exists('..\MysticThumbs.ExternalDeps.props')" />
-  </ImportGroup>
+    </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="..\MysticThumbs.ExternalDeps.props" Condition="exists('..\MysticThumbs.ExternalDeps.props')" />
-  </ImportGroup>
+    </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="..\MysticThumbs.ExternalDeps.props" Condition="exists('..\MysticThumbs.ExternalDeps.props')" />
-  </ImportGroup>
+    </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="..\MysticThumbs.ExternalDeps.props" Condition="exists('..\MysticThumbs.ExternalDeps.props')" />
-  </ImportGroup>
-  <PropertyGroup Label="UserMacros">
-    <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir>
-  </PropertyGroup>
+    </ImportGroup>
+  <PropertyGroup Label="UserMacros"><OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir></PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
     <TargetExt>.mtp</TargetExt>
     <TargetName>VCSVGPlugin$(PlatformArchitecture)</TargetName>
     <LibraryPath>$(LibraryPath)</LibraryPath>
     <IncludePath>$(IncludePath)</IncludePath>
-    <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir>
-    <IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir>
-  </PropertyGroup>
+  <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir><IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir></PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
     <TargetExt>.mtp</TargetExt>
     <TargetName>VCSVGPlugin$(PlatformArchitecture)</TargetName>
     <IncludePath>$(IncludePath)</IncludePath>
     <LibraryPath>$(LibraryPath)</LibraryPath>
-    <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir>
-    <IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir>
-  </PropertyGroup>
+    <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir><IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir></PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <TargetExt>.mtp</TargetExt>
     <TargetName>VCSVGPlugin$(PlatformArchitecture)</TargetName>
     <IncludePath>$(IncludePath)</IncludePath>
     <LibraryPath>$(LibraryPath)</LibraryPath>
-    <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir>
-    <IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir>
-  </PropertyGroup>
+  <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir><IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir></PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
     <TargetExt>.mtp</TargetExt>
     <TargetName>VCSVGPlugin$(PlatformArchitecture)</TargetName>
     <IncludePath>$(IncludePath)</IncludePath>
     <LibraryPath>$(LibraryPath)</LibraryPath>
-    <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir>
-    <IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir>
-  </PropertyGroup>
+  <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir><IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir></PropertyGroup>
   <PropertyGroup Label="Vcpkg">
     <VcpkgEnabled>false</VcpkgEnabled>
-    <OutDir>$(APPDATA)\MysticThumbs\Plugins\$(PlatformArchitecture)\$(Configuration)\</OutDir>
-  </PropertyGroup>
+  <OutDir>$(APPDATA)\MysticThumbs\Plugins\$(PlatformArchitecture)\$(Configuration)\</OutDir></PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -132,7 +104,6 @@
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <CompileAs>CompileAsCpp</CompileAs>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(MysticThumbsResvgInclude);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -140,11 +111,8 @@
       <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
       <EnableCOMDATFolding>false</EnableCOMDATFolding>
-      <AdditionalLibraryDirectories>$(MysticThumbsResvgLib);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
-    <PreLinkEvent />
-    <PostBuildEvent />
-  </ItemDefinitionGroup>
+    <PreLinkEvent /><PostBuildEvent /></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -153,7 +121,6 @@
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <CompileAs>CompileAsCpp</CompileAs>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(MysticThumbsResvgInclude);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -161,8 +128,7 @@
       <AdditionalDependencies>resvg.lib;Ws2_32.lib;Userenv.lib;ntdll.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
       <EnableCOMDATFolding>false</EnableCOMDATFolding>
-      <AdditionalLibraryDirectories>$(MysticThumbsResvgLib);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-    </Link>
+      </Link>
     <PreBuildEvent>
       <Command>
       </Command>
@@ -179,9 +145,7 @@
       <Outputs>
       </Outputs>
     </CustomBuildStep>
-    <PreLinkEvent />
-    <PostBuildEvent />
-  </ItemDefinitionGroup>
+    <PreLinkEvent /><PostBuildEvent /></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -192,7 +156,6 @@
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <CompileAs>CompileAsCpp</CompileAs>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(MysticThumbsResvgInclude);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -200,15 +163,12 @@
       <EnableCOMDATFolding>false</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(MysticThumbsResvgLib);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PreBuildEvent>
       <Command>
       </Command>
     </PreBuildEvent>
-    <PreLinkEvent />
-    <PostBuildEvent />
-  </ItemDefinitionGroup>
+    <PreLinkEvent /><PostBuildEvent /></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -219,7 +179,6 @@
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <CompileAs>CompileAsCpp</CompileAs>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(MysticThumbsResvgInclude);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -227,15 +186,12 @@
       <EnableCOMDATFolding>false</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(MysticThumbsResvgLib);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PreBuildEvent>
       <Command>
       </Command>
     </PreBuildEvent>
-    <PreLinkEvent />
-    <PostBuildEvent />
-  </ItemDefinitionGroup>
+    <PreLinkEvent /><PostBuildEvent /></ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\Common\MysticThumbsPlugin.h" />
     <ClInclude Include="..\Common\SharedMysticThumbsPlugin.h" />

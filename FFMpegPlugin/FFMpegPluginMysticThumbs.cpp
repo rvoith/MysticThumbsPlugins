@@ -894,9 +894,12 @@ public:
 				if (FAILED(hr = lock->GetDataPointer(&bufferSize, &dst)))
 					return E_FAIL;
 
-				// IM: note - this line by line copy is not strictly necessary for a RGBA 32 bit format, it's going to be stride safe to copy everything - at least currently.
-                // - also, you could just check srcstride == dststride and do one big copy if they match. but this is safer for now and the performance difference should be negligible for typical thumbnail sizes.
-                // - another option is using thread based parallel line copying for larger images, but again probably not worth it for typical thumbnail sizes.
+				// IM: note - this line by line copy is not strictly necessary for a RGBA 32 bit format, 
+				// it's going to be stride safe to copy everything - at least currently.
+            // - also, you could just check srcstride == dststride and do one big copy if they match,
+				// but this is safer for now and the performance difference should be negligible for typical 
+				// thumbnail sizes.
+            // - another option is using thread based parallel line copying for larger images, but again probably not worth it for typical thumbnail sizes.
 
 				// Copy row by row (stride-safe)
 				const UINT srcStride = w * 4;
@@ -1523,7 +1526,7 @@ public:
 			std::wstring tempDir = GetTempDirectory(L"Voith's CODE\\FFMpeg Plugin MysticThumbs\\");
 
 			std::wstring mediaPath, pngPath;
-			if (!MakeTempFilePair(tempDir, L".tmpvid", mediaPath, pngPath))
+			if (!MakeTempFilePair(tempDir, L"tmpv", mediaPath, pngPath))
 			{
 				m_log->logf(L"%sGenerateImage: MakeTempFilePair failed", m_logTag.Tag());
                 return {};

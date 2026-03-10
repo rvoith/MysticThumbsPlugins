@@ -1439,7 +1439,7 @@ private:
 				// Plate opaque
 				if(root.QueryDWORDValue(REG_PLATE_OPAQUE, v) == ERROR_SUCCESS)
 					plateOpaque = !!v;
-
+				 
 				// Label scale
 				if(root.QueryDWORDValue(REG_LABEL_SCALE, labelScalePct) == ERROR_SUCCESS)
 					labelScalePct = std::clamp(labelScalePct, 50UL, 100UL);
