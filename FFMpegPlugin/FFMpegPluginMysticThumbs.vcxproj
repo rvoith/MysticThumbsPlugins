@@ -29,25 +29,25 @@
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <CharacterSet>Unicode</CharacterSet>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
   <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir><IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir><TargetName>VCFFMpegPlugin$(PlatformArchitecture)</TargetName></PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <CharacterSet>Unicode</CharacterSet>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
   <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir><IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir><TargetName>VCFFMpegPlugin$(PlatformArchitecture)</TargetName></PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <CharacterSet>Unicode</CharacterSet>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
   <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir><IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir><TargetName>VCFFMpegPlugin$(PlatformArchitecture)</TargetName></PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <CharacterSet>Unicode</CharacterSet>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
   <OutDir>$(APPDATA)\MysticThumbs\Plugins\\</OutDir><IntDir>$(ProjectDir)intermediate\$(Platform)\$(Configuration)\</IntDir><TargetName>VCFFMpegPlugin$(PlatformArchitecture)</TargetName></PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">

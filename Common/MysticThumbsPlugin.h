@@ -2,9 +2,17 @@
 // 
 // Header for MysticThumbs plugins
 // 
-// Copyright 2011 MysticCoder
+// Copyright 2011-2026 MysticCoder
 // http://mysticcoder.net/mysticthumbs
+// 
+// This file and the associated example plugin project can be found at:
+// https://github.com/ianmasters/MysticThumbsExamplePlugin
+// Please read the LICENSE file found there for the terms under which this code is licensed.
 //
+// 
+// This code is provided as an example and template for creating MysticThumbs plugins.
+// 
+// 
 // This file is the primary interface header for MysticThumbs plugins.
 // It should not be modified or redistributed in any way.
 // Please see the MysticThumbs license.
@@ -246,17 +254,31 @@ enum MysticThumbsPluginFlags : unsigned int
     MT_Transparency_Canvas = 0x00000002, // Used to be MT_Transparency_Checkerboard2.
     MT_Transparency_Transparent = 0x00000004,
     MT_Transparency_Checkerboard = 0x00000008,
-    //MT_Transparency_Mask = 0x0000000f, // all bits
+    MT_Transparency_Mask = 0x0000000f, // all transparency bits
 
     // NOTE: these have changed since version 2. They are still hints but are now in different orders. Recompile may be needed.
     // Embedded thumbnail flags, one of the following:
     MT_EmbeddedThumb_Never = 0x00000010,
     MT_EmbeddedThumb_Always = 0x00000020,
     MT_EmbeddedThumb_IfLarger = 0x00000040,
+    MT_EmbeddedThumb_Mask = 0x00000070, // all embedded thumbnail bits
 
     // Scale to fit is requested. This is handled by MysticThumbs, but the hint is here.
     MT_ScaleUp = 0x00000100,
+    MT_Scale_Mask = 0x00000100, // all scale bits
 
+    // Added in 2026.1.2 - not passed in previous versions.
+    // Sampling methods should be considered carefully.
+    // MysticThumbs will scale your output to the destination size regardless of these flags.
+    // If you are compositing an image, think carefully about if you want to be scaling the composite images with or without scaling since the output image will be likely the source image size.
+    // Ideally, use nearest sampling when COMPOSITING to the target size. Any sub sampling or resizing using another method can introduce artifacts.
+    // Thus - multiple filters can reduce image quality, so:
+    // - Composite at a "canvas size without filters" (MT_Sample_Nearest) and pass the result to MysticThumbs since it will do final scaling with your result.
+    // - This depends on how you are composing if that is what you are going, but try to stay with nearest sampling where possible.
+    MT_Sample_Nearest = 0x00000200,
+    MT_Sample_Linear = 0x00000400,
+    MT_Sample_Cubic = 0x00000800,
+    MT_Sample_Mask = 0x00000e00, // all sample bits
 
     // Output flags up in the high bits.
 
@@ -295,17 +317,15 @@ public:
     // Identify plugin by GUID for uniqueness
     virtual _Notnull_ LPCGUID GetGuid() const = 0;
 
-    // New in VERSION 4
-
     /// <summary>
-    /// Get a description of this plugin including what it does and any copyright information.
+    /// New in VERSION 4: Get a description of this plugin including what it does and any copyright information.
     /// Use /n for new lines as needed.
     /// </summary>
     /// <returns>The string, can be, but ideally not be, nullptr</returns>
     virtual _Notnull_ LPCWSTR GetDescription() const = 0;
 
     /// <summary>
-    /// Get the author of this plugin.
+    /// New in VERSION 4: Get the author of this plugin.
     /// Who wrote it, company information, email, GitHub links etc.
     /// Use /n for new lines as needed.
     /// </summary>

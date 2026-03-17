@@ -4,7 +4,7 @@
 
 Plugin development for MysticThumbs - The SVG-, FFMpeg and DLL plugins
 
-Last updated: March 9th, 2026
+Last updated: March 17th, 2026
 
 ![SVGplugin sample](Media/vcsvgplugin-sample.jpg) ![FFMpegplugin sample](Media/vcffmpegplugin-sample.jpg) ![DLLPlugin sample](Media/vcdllplugin-sample.jpg)
 
@@ -26,7 +26,7 @@ MysticThumbs is a very powerful Windows thumbnail extension framework developed 
 
 ![mt_02](Media/mt_02.jpg)
 
-MysticThumbs extends Windows Explorer with support for file types not handled natively by Windows.
+MysticThumbs extends Windows Explorer with support for file types not handled natively by Windows. In addition, you also get a whole set of cool features,  like proper transparency handling, optional checkerboarding, high-quality sampling and scaling, GPU-accelerated rendering, consistent Explorer integration, and a lean, no-bloat architecture that just works seamlessly across formats.
 
 MysticThumbs also supports third-party plugin development via .mtp plugin DLLs. This is what this README is all about.
 
